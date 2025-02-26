@@ -21,17 +21,17 @@ sarch_cfg = SearchConfig(
     size_ratio=(0.45, 0.45),
     randomize_pos_ratio=0.75,
     randomize_height_ratio=0.1,
-    n_remove=0,
+    n_remove=20,
     height=0.2,
     shape="box",
     max_step_size=0.31,
-    max_foot_displacement=0.265
+    max_foot_displacement=0.275
 )
 
 run_cfg = RunConfig(
     xml_path=robot_description.xml_scene_path,
-    n_cores=10,
-    n_run=20,
+    n_cores=6,
+    n_run=20000,
     sim_dt=1.0e-3,
     collision=True,
     feet_frames_mj=feet_frames_mj
@@ -74,9 +74,10 @@ class SteppingStonesParallel(ParallelExecutorBase):
             interactive_goal=False,
             sim_dt=run_cfg.sim_dt,
             print_info=False,
+            solve_async=False,
             )
         mpc.contact_planner.set_contact_locations(stones.positions[path].copy())
-        sim_time = (len(path) + 3) * mpc.config_gait.nominal_period
+        sim_time = (len(path) + 2) * mpc.config_gait.nominal_period
 
         # Run sim
         job_dir = self.get_job_dir(job_id)
@@ -88,7 +89,7 @@ class SteppingStonesParallel(ParallelExecutorBase):
             q0,
             v0,
             run_cfg,
-            record_video=True,
+            record_video=False,
             record_dir=job_dir)
         
         return success

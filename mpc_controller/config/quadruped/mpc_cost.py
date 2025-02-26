@@ -105,7 +105,7 @@ class Go2SlowTrotCost(MPCCostConfig):
     W_swing: np.ndarray = __init_np([5e5] * N_FEET)
 
     # force regularization weights for each foot
-    W_cnt_f_reg: np.ndarray = __init_np([[1.25, 1.25, 0.9]] * N_FEET, 1.)
+    W_cnt_f_reg: np.ndarray = __init_np([[1.2, 1.2, 0.9]] * N_FEET, 1.)
 
     # Feet position constraint stability
     W_foot_pos_constr_stab: np.ndarray = __init_np([5e1] * N_FEET)

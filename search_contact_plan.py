@@ -20,10 +20,10 @@ search_cfg = SearchConfig(
     size_ratio=(0.45, 0.45),
     randomize_pos_ratio=0.75,
     randomize_height_ratio=0.1,
-    n_remove=0,
+    n_remove=20,
     height=0.2,
     shape="box",
-    max_step_size=0.31,
+    max_step_size=0.35,
     max_foot_displacement=0.265
 )
 
