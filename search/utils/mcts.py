@@ -3,6 +3,7 @@ from abc import ABC, abstractmethod
 import numpy as np
 from collections import defaultdict
 from typing import Any
+from tqdm import tqdm
 
 from .abstract import Graph
 
@@ -47,7 +48,7 @@ class MCTSBase(ABC):
             return node
         
         children = self.graph.get_neighbors(node)
-
+        np.random.shuffle(children)
         return max(children, key=lambda child: self.UCB(child))
 
     def select(self, node: Node) -> Node:
@@ -56,12 +57,16 @@ class MCTSBase(ABC):
         """
         self.current_search_path = [node]
 
-        while (node in self.value_visit and not self.is_leaf(node)
-               and any(child not in self.value_visit for child in self.graph.get_neighbors(node))):
-            node = self.best_child(node)
+        while (not self.is_leaf(node)):
+            print(node)
+            best_child = self.best_child(node)
+            if best_child is None:  # Ensure there's a valid child to move to
+                break
+            node = best_child
             self.current_search_path.append(node)
+        print(node, self.value_visit[node][1], self.is_leaf(node))
 
-        return node
+        return node  # Return the first unexplored or leaf node
     
     @abstractmethod
     def evaluate(self, simulation_path : list[Node]) -> float:
@@ -106,7 +111,7 @@ class MCTSBase(ABC):
         """
         Runs MCTS for a given number of iterations.
         """
-        for self.it in range(iterations):
+        for self.it in tqdm(range(iterations)):
             selected_node = self.select(root)
             reward = self.simulate(selected_node)
             self.backpropagate(reward)
@@ -118,9 +123,17 @@ class MCTSBase(ABC):
         path = [root]
         node = root
 
-        while (node in self.value_visit and not self.is_leaf(node)
-               and any(child not in self.value_visit for child in self.graph.get_neighbors(node))):
-            node = self.best_child(node)
+        # Take maximum average reward child
+        while (node in self.value_visit 
+               and self.value_visit[node][1] > 0
+               and not self.is_leaf(node)):
+            children = self.graph.get_neighbors(node)
+            node = max(children, key=lambda child: self.value_visit[child][0] / (self.value_visit[child][1]+1))
+            if node == path[-1]:
+                break
             path.append(node)
 
         return path
+    
+    def best_value_node(self) -> Node:
+        return max(self.value_visit.keys(), key=lambda node: self.value_visit[node][0] / (self.value_visit[node][1]+1))

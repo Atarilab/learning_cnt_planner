@@ -33,10 +33,11 @@ class ChunkBinaryTree(Graph):
         
     def set_resolution(self, resolution : int) -> None:
         self.resolution = resolution
+        print("tree", self.resolution)
         
     @staticmethod
     def get_resolution(node : Node) -> int:
-        return int(np.log(len(node)) / np.log(2))
+        return int(np.log2(len(node)))
         
     @staticmethod
     def duplicate(node : Node) -> Node:
@@ -78,7 +79,7 @@ class ChunkBinaryTree(Graph):
     def get_neighbors(self, node):
         
         res = self.get_resolution(node)
-        if res > self.base or res > self.resolution:
+        if res > self.base or res >= self.resolution:
             return []
         
         if res == self.base:
@@ -149,13 +150,16 @@ class GaitParallelGraph(Graph):
         self.start_node = tuple(tree.start_node for tree in self.trees)
         
     def increase_res(self) -> None:
-        map(lambda tree : tree.increase_res(), self.trees)
-        
+        for tree in self.trees:
+            tree.decrease_res()
+    
     def decrease_res(self) -> None:
-        map(lambda tree : tree.decrease_res(), self.trees)
-        
+        for tree in self.trees:
+            tree.increase_res()
+            
     def set_resolution(self, resolution : int) -> None:
-        map(lambda tree : tree.set_resolution(resolution), self.trees)       
+        for tree in self.trees:
+            tree.set_resolution(resolution)
         
     def get_neighbors(self, node : Node) -> list[Node]:
         neighbors = list(product(*(map(lambda children : children if children else n, tree.get_neighbors(n)) for tree, n in zip(self.trees, node))))
