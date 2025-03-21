@@ -1,15 +1,26 @@
 import numpy as np
 import mujoco
+
+def euler_to_rot(euler_xyz) -> np.ndarray:
+    q = np.zeros(4)
+    mujoco.mju_euler2Quat(q, euler_xyz, "xyz")
+    mat_flat = np.zeros(9)
+    mujoco.mju_quat2Mat(mat_flat, q)
+    return mat_flat.reshape(3, 3, order="A")
+    
 class Surface:
     """Represents a planar surface with a center, normal, and size."""
-    def __init__(self, center: np.ndarray, normal: np.ndarray, size_x: float, size_y: float):
+    def __init__(self, center: np.ndarray, normal: np.ndarray, rot : np.ndarray, size_x: float, size_y: float):
         self.center = np.array(center)
-        self.normal = np.array(normal) / np.linalg.norm(normal)  # Normalize normal
+        # Normalized normal
+        self.normal = np.round(np.array(normal) / np.linalg.norm(normal), 4)
+        # Rotation matrix
+        self.rot = np.round(rot, 4)
         self.size_x = size_x
         self.size_y = size_y
 
     def __repr__(self):
-        return f"Surface(center={self.center}, normal={self.normal}, size_x={self.size_x}, size_y={self.size_y})"
+        return f"Surface(center={self.center}, normal={self.normal}, R={self.rot}, size_x={self.size_x}, size_y={self.size_y})"
 
 class Box:
     """Extracts surfaces from a rotated box given its position, size, and orientation."""
@@ -21,12 +32,7 @@ class Box:
         """
         self.pos = np.array(pos)
         self.size = np.array(size)
-
-        q = np.zeros(4)
-        mujoco.mju_euler2Quat(q, euler, "xyz")
-        mat_flat = np.zeros(9)
-        mujoco.mju_quat2Mat(mat_flat, q)
-        self.rotation_matrix = mat_flat.reshape(3, 3, order="A")
+        self.rot = euler_to_rot(euler)
         
     def get_surfaces(self):
         """Returns a list of six rotated surfaces (center, normal, size_x, size_y) of the box."""
@@ -34,23 +40,23 @@ class Box:
 
         # Define local surface centers and normals before rotation
         local_surfaces = [
-            ([ 0., 0., dz], [ 0,  0,  1], dx, dy),   # Top
-            ([ 0., 0., -dz], [ 0,  0, -1], dx, dy),  # Bottom
-            ([ dx, 0., 0.], [ 1,  0,  0], dy, dz),   # Front
-            ([ -dx, 0., 0.], [-1,  0,  0], dy, dz),  # Back
-            ([ 0., dy, 0.], [ 0,  1,  0], dx, dz),   # Right
-            ([ 0., -dy, 0.], [ 0, -1,  0], dx, dz),  # Left
+            ([0., 0., dz], np.eye(3), dx, dy),   # Top: Normal is [0, 0, 1], identity rotation matrix
+            ([0., 0., -dz], np.array([[1, 0, 0], [0, -1, 0], [0, 0, -1]]), dx, dy),  # Bottom: Normal is [0, 0, -1]
+            ([dx, 0., 0.], np.array([[0, 0, 1], [0, 1, 0], [-1, 0, 0]]), dy, dz),   # Front: Normal is [1, 0, 0]
+            ([-dx, 0., 0.], np.array([[0, 0, -1], [0, 1, 0], [1, 0, 0]]), dy, dz),  # Back: Normal is [-1, 0, 0]
+            ([0., dy, 0.], np.array([[1, 0, 0], [0, 0, -1], [0, 1, 0]]), dx, dz),   # Right: Normal is [0, 1, 0]
+            ([0., -dy, 0.], np.array([[1, 0, 0], [0, 0, 1], [0, -1, 0]]), dx, dz),  # Left: Normal is [0, -1, 0]
         ]
-
         # Apply rotation to centers and normals
         # Compute size in world frame
         rotated_surfaces = [
             Surface(
-                center=self.pos + self.rotation_matrix @ center, 
-                normal=self.rotation_matrix @ np.array(normal),
-                size_x=np.dot(np.array([size_x, 0., 0.]), self.rotation_matrix[0, :]), 
-                size_y=np.dot(np.array([0., size_y, 0.]), self.rotation_matrix[1, :])
-            ) for center, normal, size_x, size_y in local_surfaces
+                center=self.pos + self.rot @ center, 
+                normal=self.rot @ R[:, -1],
+                rot=self.rot @ R,
+                size_x=np.dot(np.array([size_x, 0., 0.]), self.rot[0, :]), 
+                size_y=np.dot(np.array([0., size_y, 0.]), self.rot[1, :])
+            ) for center, R, size_x, size_y in local_surfaces
         ]
 
         return rotated_surfaces
