@@ -180,7 +180,6 @@ class MCTSPhaseLocomotionTask(MCTSBase):
 
         # Initialize output arrays with zeros
         surface_centers = np.zeros((n_feet, n_nodes, 3))
-        surface_normals = np.zeros((n_feet, n_nodes, 3))
         surface_rot = np.zeros((n_feet, n_nodes, 3, 3))
         surface_sizes = np.zeros((n_feet, n_nodes, 2))
         
@@ -203,11 +202,10 @@ class MCTSPhaseLocomotionTask(MCTSBase):
 
                 # Assign surface properties
                 surface_centers[i_foot, i_node] = surface.center
-                surface_normals[i_foot, i_node] = surface.normal
                 surface_rot[i_foot, i_node] = surface.rot
                 surface_sizes[i_foot, i_node] = [surface.size_x, surface.size_y]             
 
-        return surface_centers, surface_normals, surface_rot, surface_sizes
+        return surface_centers, surface_rot, surface_sizes
         
     @staticmethod
     def sigmoid(x):
@@ -220,7 +218,7 @@ class MCTSPhaseLocomotionTask(MCTSBase):
         cnt_sequence, patches = self.get_sequence_patches_from_path(simulation_path[start_phase:])
         cnt_sequence = cnt_sequence[:, :self.opt_nodes+1]
 
-        patch_center, patch_normal, patch_rot, patch_size = self.get_contact_patch(cnt_sequence, patches, self.surfaces)
+        patch_center, patch_rot, patch_size = self.get_contact_patch(cnt_sequence, patches, self.surfaces)
         peak_sequence = np.ones_like(cnt_sequence) - cnt_sequence
         
         if reset:
@@ -242,7 +240,7 @@ class MCTSPhaseLocomotionTask(MCTSBase):
             swing_peak=peak_sequence,
         )
         try:
-            self.solver.setup_contact_patch(patch_center, patch_normal, patch_rot, patch_size)
+            self.solver.setup_contact_patch(patch_center, patch_rot, patch_size)
             self.solver.update_solver()
             q_sol, v_sol, _, _, dt_sol = self.solver.solve()
             return q_sol, v_sol, dt_sol
