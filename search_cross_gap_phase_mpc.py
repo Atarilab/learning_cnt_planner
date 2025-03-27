@@ -33,21 +33,21 @@ surfaces = setup_scene(sim, gap_length=GAP_LENGTH, wall_angle=WALL_ANGLE)
 ##################  Solver
 # Opt
 DT = 0.035
-NODES = 40
+NODES = 35
 config_opt = MPCOptConfig(
     time_horizon=NODES * DT,
     n_nodes=NODES,
-    replanning_freq=20,
-    Kp=20,
-    Kd=3.,
+    replanning_freq=25,
+    Kp=30,
+    Kd=7.,
     recompile=RECOMPILE,
     max_iter=MAX_IT,
-    max_qp_iter=6,
+    max_qp_iter=7,
     opt_peak=True,
     warm_start_sol=True,
     nlp_tol=1.0e-2,
     qp_tol=1.0e-3,
-    hpipm_mode=HPIPM_MODE.balance,
+    hpipm_mode=HPIPM_MODE.speed,
 )
 
 # Cost
@@ -56,25 +56,25 @@ def __init_np(l : List, scale : float=1.):
     return np.array(l) * scale
 
 W = [
-        0e0, 0e0, 1e0,      # Base position weights
-        1e2, 1e3, 1e3,      # Base orientation (ypr) weights
-        1e2, 1e2, 1e2,      # Base linear velocity weights
-        2e2, 1e2, 1e2,      # Base angular velocity weights
+        0e0, 0e0, 0e0,      # Base position weights
+        1e1, 4e1, 4e1,      # Base orientation (ypr) weights
+        1e0, 1e0, 5e0,      # Base linear velocity weights
+        5e0, 3e1, 3e1,      # Base angular velocity weights
     ]
 
 HSE_SCALE = [15., 5., 1.] *  n_feet
 config_cost = MPCCostConfig(
     robot_name=ROBOT_NAME,
     gait_name="",
-    W_e_base=__init_np(W, 1.),
+    W_e_base=__init_np(W, 0.5),
     W_base=__init_np(W, 5.),
-    W_joint=__init_np(HSE_SCALE + [0.04] * len(HSE_SCALE), 5.),
+    W_joint=__init_np(HSE_SCALE + [0.02] * len(HSE_SCALE), 5.),
     W_e_joint=__init_np(HSE_SCALE + [0.01] * len(HSE_SCALE), 0.1),
     W_acc=__init_np(HSE_SCALE, 5.e-4),
     W_swing=__init_np([2e4] * n_feet),
-    W_eeff_ori=__init_np([5.] * n_feet),
+    W_eeff_ori=__init_np([10.] * n_feet),
     W_cnt_f_reg = __init_np([[0.01, 0.01, 0.05]] * n_feet),
-    W_foot_pos_constr_stab = __init_np([5e1] * n_feet),
+    W_foot_pos_constr_stab = __init_np([1e1] * n_feet),
     W_foot_displacement = __init_np([0.]),
     cnt_radius = 0.015, # m
     time_opt = __init_np([1.0e4]),
@@ -82,41 +82,12 @@ config_cost = MPCCostConfig(
     reg_eps_e = 1.0e-5,
 )
 
-# W_track = [
-#         1e1, 1e1, 5e1,      # Base position weights
-#         3e1, 3e1, 3e1,      # Base orientation (ypr) weights
-#         0e1, 0e1, 1e1,      # Base linear velocity weights
-#         0e1, 0e1, 0e1,      # Base angular velocity weights
-#     ]
-# W_e_track = [
-#         1e3, 1e3, 1e3,      # Base position weights
-#         1e3, 1e3, 1e3,      # Base orientation (ypr) weights
-#         0e1, 0e1, 1e1,      # Base linear velocity weights
-#         0e1, 0e1, 0e1,      # Base angular velocity weights
-#     ]
-
-# config_opt
-#     W_joint=__init_np([1.] * 12 + [0.1] * 12, 200.),
-#     W_e_joint=__init_np([1] * 12 + [0.01] * 12, 100),
-#     W_acc=__init_np(HSE_SCALE, 1.e-3),
-#     W_swing=__init_np([1e4] * n_feet),
-#     W_eeff_ori=__init_np([0.] * n_feet),
-#     W_cnt_f_reg = __init_np([[0.03, 0.03, 0.05]] * n_feet),
-#     W_foot_pos_constr_stab = __init_np([5e1] * n_feet),
-#     W_foot_displacement = __init_np([0.]),
-#     cnt_radius = 0.015, # m
-#     time_opt = __init_np([1.0e4]),
-#     reg_eps = 1.0e-6,
-#     reg_eps_e = 1.0e-5,
-# )
-
-
 config_gait = GaitConfig(
     "acyclic",
     DURATION,
     np.array([0.1, 0.1, 0.1, 0.1]),
     np.array([0.1, 0.1, 0.1, 0.1]),
-    0.28,
+    0.3,
     0.05,
 )
 
@@ -181,7 +152,7 @@ if __name__ == "__main__":
         goal_surf_id=GOAL
         )
     print("Node per phase", mcts.node_per_phase)
-    mcts.node_per_phase = 8
+    mcts.node_per_phase = 6
     duration = len(phase_sequence) * mcts.node_per_phase * (config_opt.time_horizon / config_opt.n_nodes)
 
     # Low horizon MPC

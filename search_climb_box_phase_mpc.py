@@ -39,7 +39,7 @@ config_opt = MPCOptConfig(
     n_nodes=NODES,
     replanning_freq=25,
     Kp=30,
-    Kd=6.5,
+    Kd=7.,
     recompile=RECOMPILE,
     max_iter=MAX_IT,
     max_qp_iter=7,
@@ -57,7 +57,7 @@ def __init_np(l : List, scale : float=1.):
 
 W = [
         0e0, 0e0, 0e0,      # Base position weights
-        1e0, 4e1, 4e1,      # Base orientation (ypr) weights
+        1e1, 4e1, 4e1,      # Base orientation (ypr) weights
         1e0, 1e0, 5e0,      # Base linear velocity weights
         5e0, 3e1, 3e1,      # Base angular velocity weights
     ]
@@ -68,7 +68,7 @@ config_cost = MPCCostConfig(
     gait_name="",
     W_e_base=__init_np(W, 0.5),
     W_base=__init_np(W, 5.),
-    W_joint=__init_np(HSE_SCALE + [0.01] * len(HSE_SCALE), 5.),
+    W_joint=__init_np(HSE_SCALE + [0.02] * len(HSE_SCALE), 5.),
     W_e_joint=__init_np(HSE_SCALE + [0.01] * len(HSE_SCALE), 0.1),
     W_acc=__init_np(HSE_SCALE, 5.e-4),
     W_swing=__init_np([2e4] * n_feet),
