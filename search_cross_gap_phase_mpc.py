@@ -32,16 +32,17 @@ surfaces = setup_scene(sim, gap_length=GAP_LENGTH, wall_angle=WALL_ANGLE)
 
 ##################  Solver
 # Opt
-DT = DURATION / N_OPT_NODES
+DT = 0.035
+NODES = 40
 config_opt = MPCOptConfig(
-    time_horizon=1.2,
-    n_nodes=30,
-    replanning_freq=30,
-    Kp=20.,
-    Kd=1.75,
+    time_horizon=NODES * DT,
+    n_nodes=NODES,
+    replanning_freq=20,
+    Kp=20,
+    Kd=3.,
     recompile=RECOMPILE,
     max_iter=MAX_IT,
-    max_qp_iter=7,
+    max_qp_iter=6,
     opt_peak=True,
     warm_start_sol=True,
     nlp_tol=1.0e-2,
@@ -55,9 +56,9 @@ def __init_np(l : List, scale : float=1.):
     return np.array(l) * scale
 
 W = [
-        0e0, 0e0, 1e1,      # Base position weights
+        0e0, 0e0, 1e0,      # Base position weights
         1e2, 1e3, 1e3,      # Base orientation (ypr) weights
-        1e2, 1e2, 3e2,      # Base linear velocity weights
+        1e2, 1e2, 1e2,      # Base linear velocity weights
         2e2, 1e2, 1e2,      # Base angular velocity weights
     ]
 
@@ -67,11 +68,11 @@ config_cost = MPCCostConfig(
     gait_name="",
     W_e_base=__init_np(W, 1.),
     W_base=__init_np(W, 5.),
-    W_joint=__init_np(HSE_SCALE + [0.05] * len(HSE_SCALE), 5.),
+    W_joint=__init_np(HSE_SCALE + [0.04] * len(HSE_SCALE), 5.),
     W_e_joint=__init_np(HSE_SCALE + [0.01] * len(HSE_SCALE), 0.1),
     W_acc=__init_np(HSE_SCALE, 5.e-4),
     W_swing=__init_np([2e4] * n_feet),
-    W_eeff_ori=__init_np([1.] * n_feet),
+    W_eeff_ori=__init_np([5.] * n_feet),
     W_cnt_f_reg = __init_np([[0.01, 0.01, 0.05]] * n_feet),
     W_foot_pos_constr_stab = __init_np([5e1] * n_feet),
     W_foot_displacement = __init_np([0.]),
@@ -129,8 +130,8 @@ mpc = AcyclicMPC(
     sim_dt=SIM_DT,
     height_offset=0.,
     print_info=False,
-    compute_timings=False,
-    solve_async=True,
+    compute_timings=True,
+    solve_async=False,
 )
 
 if __name__ == "__main__":
@@ -142,14 +143,30 @@ if __name__ == "__main__":
     GOAL = (1, 1, 1, 1)
     START_NODE = (0, (1, 1, 1, 1), (0, 0, 0, 0))
     
+    # Trot 
+    # phase_sequence = [
+    #     (0, (1, 1, 1, 1), (0, 0, 0, 0)),
+    #     (0, (1, 1, 1, 1), (0, 0, 0, 0)),
+    #     (0, (0, 1, 1, 0), (0, 0)),
+    #     (1, (1, 0, 0, 1), (1, 0)),
+    #     (2, (0, 1, 1, 0), (1, 0)),
+    #     (3, (1, 0, 0, 1), (1, 1)),
+    #     (2, (0, 1, 1, 0), (1, 1)),
+    #     (6, (1, 1, 1, 1), (1, 1, 1, 1))
+    #     ]
+    
+    # Cross using walls
     phase_sequence = [
         (0, (1, 1, 1, 1), (0, 0, 0, 0)),
         (0, (1, 1, 1, 1), (0, 0, 0, 0)),
-        (0, (0, 1, 1, 0), (0, 0)),
-        (1, (1, 0, 0, 1), (1, 0)),
-        (2, (0, 1, 1, 0), (1, 0)),
-        (3, (1, 0, 0, 1), (1, 1)),
-        (2, (0, 1, 1, 0), (1, 1)),
+        (1, (0, 0, 1, 1), (0, 0)),
+        (2, (1, 1, 1, 1), (2, 3, 0, 0)),
+        (1, (1, 1, 0, 0), (2, 3)),
+        (2, (1, 1, 1, 1), (2, 3, 2, 3)),
+        (3, (0, 1, 1, 1), (3, 2, 3)),
+        (1, (1, 0, 1, 1), (1, 2, 3)),
+        (1, (1, 1, 0, 1), (1, 1, 3)),
+        (1, (1, 1, 1, 0), (1, 1, 1)),
         (6, (1, 1, 1, 1), (1, 1, 1, 1))
         ]
         
@@ -164,8 +181,8 @@ if __name__ == "__main__":
         goal_surf_id=GOAL
         )
     print("Node per phase", mcts.node_per_phase)
-    mcts.node_per_phase = 10
-    duration = mcts.n_phases * mcts.node_per_phase * (config_opt.time_horizon / config_opt.n_nodes)
+    mcts.node_per_phase = 8
+    duration = len(phase_sequence) * mcts.node_per_phase * (config_opt.time_horizon / config_opt.n_nodes)
 
     # Low horizon MPC
     start_phase = 0 if phase_sequence[0] else 1
@@ -181,11 +198,11 @@ if __name__ == "__main__":
     )
     
     
-    # q_open_loop_traj = mpc.open_loop(*sim.get_initial_state(), DURATION)
+    # q_open_loop_traj = mpc.open_loop(*sim.get_initial_state(), duration)
     # sim.visualize_trajectory(q_open_loop_traj)
     
-    sim.run(duration+2., controller=mpc)
-    # mpc.print_timings()
+    sim.run(duration+1., use_viewer=True, controller=mpc, record_video=True)
+    mpc.print_timings()
     
     # # Solver
     # q_sol, v_sol, dt_sol = m30cts.run_solver(phase_sequence)
