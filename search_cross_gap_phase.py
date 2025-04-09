@@ -151,7 +151,9 @@ if __name__ == "__main__":
     N_PHASES = 8
     GOAL = (1, 1, 1, 1)
     START_NODE = (0, (1, 1, 1, 1), (0, 0, 0, 0))
-        
+    MIN_RES = 0.
+    MIN_AVG_COLLISION = 0.2
+    
     # MCTS search 
     mcts = MCTSPhaseLocomotionTask(
         C=C,
@@ -161,7 +163,9 @@ if __name__ == "__main__":
         mpc_close_loop=mpc_close_loop,
         n_phases=N_PHASES,
         surfaces=surfaces,
-        goal_surf_id=GOAL
+        goal_surf_id=GOAL,
+        min_mpc_log10_prod_res=MIN_RES,
+        min_mpc_avg_collision=MIN_AVG_COLLISION,
         )
     
     mcts.run(START_NODE, ITERATIONS)

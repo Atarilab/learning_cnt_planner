@@ -35,6 +35,8 @@ class MCTSPhaseLocomotionTask(MCTSBase):
                  n_phases : int,
                  surfaces : List[Surface],
                  goal_surf_id : List[int],
+                 min_mpc_log10_prod_res : float = 0.,
+                 min_mpc_avg_collision : float = 0.5,
                  ):
         self.sim = sim
         self.q0_mj, self.v0_mj = self.sim.get_initial_state()
@@ -79,7 +81,8 @@ class MCTSPhaseLocomotionTask(MCTSBase):
             geom_id for geom_id in range(sim.mj_model.ngeom)
             if sim.mj_model.geom_bodyid[geom_id] != self.base_body_id
         ]
-        
+        self.min_mpc_log10_prod_res = min_mpc_log10_prod_res
+        self.min_mpc_avg_collision = min_mpc_avg_collision
         self.alpha_exploration = alpha_exploration
         
         # Init MCTS
@@ -325,7 +328,7 @@ class MCTSPhaseLocomotionTask(MCTSBase):
         reward *= np.exp(-W_COLLISION * avg_robot_collision)
         
         # If promising solution, run close loop
-        if log10_prod_res < 0. and avg_robot_collision < 0.2:
+        if log10_prod_res < self.min_mpc_log10_prod_res and avg_robot_collision < self.min_mpc_avg_collision:
             # Run with different number of nodes per phase
             success = False
             # Repeat first one makes the MPC better
