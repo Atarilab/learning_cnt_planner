@@ -16,7 +16,6 @@ class MCTSBase(ABC):
         self.current_search_path: list[Node] = []
         self.C = C
         self.it = 0
-        self.max_sim_step = 10
 
     def UCB(self, node: Node) -> float:
         """
@@ -57,14 +56,12 @@ class MCTSBase(ABC):
         """
         self.current_search_path = [node]
 
-        while (not self.is_leaf(node)):
-            print(node)
+        while (self.value_visit[node][1] > 0  and not self.is_leaf(node)):
             best_child = self.best_child(node)
             if best_child is None:  # Ensure there's a valid child to move to
                 break
             node = best_child
             self.current_search_path.append(node)
-        print(node, self.value_visit[node][1], self.is_leaf(node))
 
         return node  # Return the first unexplored or leaf node
     
@@ -86,18 +83,12 @@ class MCTSBase(ABC):
         """
         Perform a random rollout from the selected node to estimate value.
         """
-        rollout_node = node
-        simulation_path = [n for n in self.current_search_path]
-        i = 0
-        while i < self.max_sim_step:
-            i += 1
-            rollout_node = self.rollout_policy(rollout_node)
-            if self.is_leaf(rollout_node):
-                break
-            else:
-                simulation_path.append(rollout_node)
+        simulation_path = []
+        while not self.is_leaf(node):
+            node = self.rollout_policy(node)
+            simulation_path.append(node)
 
-        return self.evaluate(simulation_path)
+        return self.evaluate(self.current_search_path + simulation_path)
 
     def backpropagate(self, reward: float):
         """

@@ -3,20 +3,25 @@ from typing import Any, List
 
 from mj_pin.utils import get_robot_description
 from mj_pin.simulator import Simulator
-from mpc_controller.config.config_abstract import MPCOptConfig, MPCCostConfig, HPIPM_MODE
-from mpc_controller.utils.solver import QuadrupedAcadosSolver
+from mpc_controller.config.config_abstract import MPCOptConfig, MPCCostConfig, GaitConfig, HPIPM_MODE
+from mpc_controller.mpc_acyclic import AcyclicMPC
 from search.mcts_locomotion_task import MCTSPhaseLocomotionTask
 from scene.cross_gap import setup_scene
 
-
-SIM_DT = 1e-3
+# SIM
 ROBOT_NAME = "go2"
+SIM_DT = 1e-3
+# CLOSE LOOP MPC
+DT = 0.035
+N_NODES_MPC = 35
+# TRAJ OPT
 RECOMPILE = False
-N_OPT_NODES = 50
-DURATION = 2.
-MAX_IT = 40
-
-GAP_LENGTH = 0.7  # Adjustable gap between start and goal
+N_NODES_SOLVER = 40
+DURATION = N_NODES_SOLVER * DT * 1.5 # Traj opt with a coarser discretization
+MAX_IT = 50
+MAX_QP = 7
+# SCENE PARAM
+GAP_LENGTH = 0.3  # Adjustable gap between start and goal
 WALL_ANGLE = np.radians(65)  # Adjustable wall angle
 
 robot_description = get_robot_description(ROBOT_NAME)
@@ -26,23 +31,46 @@ n_feet = len(mj_feet_frames)
 sim = Simulator(robot_description.xml_scene_path)
 
 ################# Setup scene task
-surfaces = setup_scene(sim, gap_length=GAP_LENGTH, wall_angle=WALL_ANGLE)
+h_offset = 0.1
+surfaces = setup_scene(sim, gap_length=GAP_LENGTH, wall_angle=WALL_ANGLE, height=h_offset/2)
+q0 = robot_description.q0
+q0[2] += h_offset
+sim.set_initial_state(q0)
 
 ##################  Solver
 # Opt
-config_opt = MPCOptConfig(
+config_solver = MPCOptConfig(
     time_horizon=DURATION,
-    n_nodes=N_OPT_NODES,
-    replanning_freq=0, Kp=0, Kd=0,
+    n_nodes=N_NODES_SOLVER,
+    replanning_freq=1, Kp=1, Kd=1,
     recompile=RECOMPILE,
     max_iter=MAX_IT,
-    max_qp_iter=12,
+    max_qp_iter=MAX_QP,
     opt_peak=True,
     warm_start_sol=False,
     nlp_tol=1.0e-2,
     qp_tol=1.0e-3,
-    hpipm_mode=HPIPM_MODE.robust
+    hpipm_mode=HPIPM_MODE.speed,
+    solver_name="traj_opt_solver"
 )
+
+config_close_loop = MPCOptConfig(
+    time_horizon=N_NODES_MPC * DT,
+    n_nodes=N_NODES_MPC,
+    replanning_freq=25,
+    Kp=30,
+    Kd=7.,
+    recompile=RECOMPILE,
+    max_iter=MAX_IT,
+    max_qp_iter=MAX_QP,
+    opt_peak=True,
+    warm_start_sol=True,
+    nlp_tol=1.0e-2,
+    qp_tol=1.0e-3,
+    hpipm_mode=HPIPM_MODE.speed,
+    solver_name="mpc_solver"
+)
+
 
 # Cost
 def __init_np(l : List, scale : float=1.):
@@ -76,23 +104,51 @@ config_cost = MPCCostConfig(
     reg_eps_e = 1.0e-5,
 )
 
-solver = QuadrupedAcadosSolver(
+config_gait = GaitConfig(
+    "acyclic",
+    1.,
+    np.array([0.1, 0.1, 0.1, 0.1]),
+    np.array([0.1, 0.1, 0.1, 0.1]),
+    0.3,
+    0.05,
+)
+
+mpc_solver = AcyclicMPC(
     robot_description.urdf_path,
     pin_feet_frames,
-    config_opt,
+    config_solver,
     config_cost,
-    height_offset = 0.,
-    print_info = False,
-    compute_timings = False,
-    )
+    config_gait,
+    joint_ref=robot_description.q0,
+    sim_dt=SIM_DT,
+    height_offset=0.,
+    print_info=False,
+    compute_timings=False,
+    solve_async=False,
+)
+mpc_solver.config_opt.recompile = False
 
+mpc_close_loop = AcyclicMPC(
+    robot_description.urdf_path,
+    pin_feet_frames,
+    config_close_loop,
+    config_cost,
+    config_gait,
+    joint_ref=robot_description.q0,
+    sim_dt=SIM_DT,
+    height_offset=0.,
+    print_info=False,
+    compute_timings=False,
+    solve_async=False,
+)
+mpc_close_loop.config_opt.recompile = False
 
 if __name__ == "__main__":
     
     ITERATIONS = 5000
     C = 5.
-    ALPHA = 1.
-    N_PHASES = 6
+    ALPHA = 0.65
+    N_PHASES = 8
     GOAL = (1, 1, 1, 1)
     START_NODE = (0, (1, 1, 1, 1), (0, 0, 0, 0))
         
@@ -101,7 +157,8 @@ if __name__ == "__main__":
         C=C,
         alpha_exploration=ALPHA,
         sim=sim,
-        solver=solver,
+        mpc_solver=mpc_solver,
+        mpc_close_loop=mpc_close_loop,
         n_phases=N_PHASES,
         surfaces=surfaces,
         goal_surf_id=GOAL

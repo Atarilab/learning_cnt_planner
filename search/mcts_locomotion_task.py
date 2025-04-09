@@ -3,6 +3,7 @@ import mujoco
 from collections import defaultdict
 from typing import List, Tuple
 
+from mpc_controller.mpc_acyclic import AcyclicMPC
 from mpc_controller.utils.solver import QuadrupedAcadosSolver
 from mj_pin.simulator import Simulator
 from search.utils.mcts import MCTSBase
@@ -21,38 +22,36 @@ def timeit(func):
         return result
     return timed
 
+def sigmoid(x):
+    return 1 / (1 + np.exp(-x))
+
 class MCTSPhaseLocomotionTask(MCTSBase):
     def __init__(self,
                  C : float,
                  alpha_exploration : float,
                  sim : Simulator,
-                 solver : QuadrupedAcadosSolver,
+                 mpc_solver : AcyclicMPC,
+                 mpc_close_loop : AcyclicMPC,
                  n_phases : int,
                  surfaces : List[Surface],
                  goal_surf_id : List[int],
                  ):
         self.sim = sim
-        self.solver = solver
-        self.surfaces = surfaces
-        
-        # Solver variables
-        q0_mj, v0_mj = sim.get_initial_state()
-        self.q0, self.v0 = solver.dyn.convert_from_mujoco(q0_mj, v0_mj)
-        self.base_ref = np.zeros(12)
-        self.base_ref[2] = q0_mj[2]
-        self.base_ref_e = self.base_ref.copy()
-        self.step_height = 0.05
-        self.opt_nodes = self.solver.config_opt.n_nodes
-        
+        self.q0_mj, self.v0_mj = self.sim.get_initial_state()
+        self.q0, self.v0 = mpc_solver.solver.dyn.convert_from_mujoco(self.q0_mj, self.v0_mj)
+        self.mpc_solver = mpc_solver
+        self.mpc_close_loop = mpc_close_loop
+                
         # Init graph
-        self.node_per_phase = int(self.opt_nodes / n_phases)
+        self.surfaces = surfaces
+        self.solver_nodes = mpc_solver.solver.config_opt.n_nodes
+        self.node_per_phase = int(self.solver_nodes / n_phases)
         self.n_phases = n_phases
-        self.n_cnt = len(self.solver.feet_frame_names)
+        self.n_cnt = mpc_solver.n_foot
         self.patch_pos = np.array([surf.center for surf in surfaces])
         self.goal_pos = np.array([self.patch_pos[i] for i in goal_surf_id])
-
         graph = GraphPhasePatchWithPos(
-            self.opt_nodes,
+            self.solver_nodes,
             self.node_per_phase,
             self.n_cnt,
             goal_surf_id,
@@ -67,14 +66,23 @@ class MCTSPhaseLocomotionTask(MCTSBase):
         # To compute reward
         self.max_reward = 0.
         self.mj_feet_frames = ["FL", "FR", "RL", "RR"]
-        self.allowed_collision = [
+        self.non_robot_geom_id = [
                 mujoco.mj_name2id(sim.mj_model, mujoco.mjtObj.mjOBJ_GEOM, obj) if isinstance(obj, str)
                 else int(obj)
                 for obj
                 in ["floor"] + sim.edit.name_allowed_collisions + self.mj_feet_frames
             ]
+        self.feet_geom_id = self.non_robot_geom_id[-len(self.mj_feet_frames):]
+        
+        self.base_body_id = mujoco.mj_name2id(sim.mj_model, mujoco.mjtObj.mjOBJ_BODY, "base")
+        self.non_base_geom_id = [
+            geom_id for geom_id in range(sim.mj_model.ngeom)
+            if sim.mj_model.geom_bodyid[geom_id] != self.base_body_id
+        ]
         
         self.alpha_exploration = alpha_exploration
+        
+        # Init MCTS
         super().__init__(graph, C)
 
     def heuristic_bias(self, node):
@@ -138,8 +146,8 @@ class MCTSPhaseLocomotionTask(MCTSBase):
             
         return children[child_id]
     
-    def get_sequence_patches_from_path(self, path):
-        seq = np.array([list(phase[1]) for phase in path]).T.repeat(self.node_per_phase, axis=-1)
+    def get_sequence_patches_from_path(self, path, node_per_phase : int):
+        seq = np.array([list(phase[1]) for phase in path]).T.repeat(node_per_phase, axis=-1)
         seq = np.concatenate([seq, seq[:, None, -1]], axis=-1)
         
         n_eeff = len(path[-1][1])
@@ -156,7 +164,6 @@ class MCTSPhaseLocomotionTask(MCTSBase):
                 i_patch += c
         patches = list(patches_dict.values())
         return seq, patches
-    
 
     def get_contact_patch(
         self,
@@ -206,52 +213,90 @@ class MCTSPhaseLocomotionTask(MCTSBase):
                 surface_sizes[i_foot, i_node] = [surface.size_x, surface.size_y]             
 
         return surface_centers, surface_rot, surface_sizes
-        
-    @staticmethod
-    def sigmoid(x):
-        return 1 / (1 + np.exp(-x))
-    
-    def run_solver(self, simulation_path : list, reset : bool = True) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
-        
+
+    def run_traj_opt(self, simulation_path : list) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+        self.mpc_solver.reset(reset_solver=True)
         start_phase = 0 if simulation_path[0] else 1
         
-        cnt_sequence, patches = self.get_sequence_patches_from_path(simulation_path[start_phase:])
-        cnt_sequence = cnt_sequence[:, :self.opt_nodes+1]
+        cnt_sequence, patches = self.get_sequence_patches_from_path(simulation_path[start_phase:], self.node_per_phase)
+        cnt_sequence = cnt_sequence[:, :self.solver_nodes+1]
 
         patch_center, patch_rot, patch_size = self.get_contact_patch(cnt_sequence, patches, self.surfaces)
-        peak_sequence = np.ones_like(cnt_sequence) - cnt_sequence
+        self.mpc_solver.set_cnt_plan(
+            cnt_sequence,
+            patch_center,
+            patch_rot,
+            patch_size
+        )        
         
-        if reset:
-            self.solver.reset()
-            
-        self.solver.set_contact_restriction(True)
-        self.solver.dyn.update_pin(self.q0, self.v0)
-
-        self.solver.init(
-            i_node=0,
-            q=self.q0,
-            v=self.v0,
-            base_ref=self.base_ref,
-            base_ref_e=self.base_ref_e,
-            joint_ref=self.q0[-12:],
-            step_height=self.step_height,
-            cnt_sequence=cnt_sequence,
-            cnt_locations=patch_center,
-            swing_peak=peak_sequence,
-        )
         try:
-            self.solver.setup_contact_patch(patch_center, patch_rot, patch_size)
-            self.solver.update_solver()
-            q_sol, v_sol, _, _, dt_sol = self.solver.solve()
+            q_sol, v_sol, _, _, dt_sol = self.mpc_solver.optimize(self.q0, self.v0)
             return q_sol, v_sol, dt_sol
         
         except Exception as e:
             print(e)
             return [], [], []
+        
+    def run_mpc(self,
+                simulation_path : list,
+                node_per_phase : int,
+                record_video : bool = False
+                ) -> bool:
+        self.mpc_close_loop.reset(reset_solver=True)
+        
+        start_phase = 0 if simulation_path[0] else 1
+        cnt_sequence, patches = self.get_sequence_patches_from_path(simulation_path[start_phase:], node_per_phase)
+
+        patch_center, patch_rot, patch_size = self.get_contact_patch(cnt_sequence, patches, self.surfaces)
+        self.mpc_close_loop.set_cnt_plan(
+            cnt_sequence,
+            patch_center,
+            patch_rot,
+            patch_size
+        )
+        
+        try:
+            dt_nodes = self.mpc_close_loop.config_opt.time_horizon / self.mpc_close_loop.config_opt.n_nodes
+            duration = len(simulation_path) * node_per_phase * dt_nodes
+            # Run close loop in simulator
+            # Succes if base doesn't collide
+            self.sim.run(
+                sim_time=duration + 1.5,
+                use_viewer=False,
+                controller=self.mpc_close_loop,
+                record_video=record_video,
+                allowed_collision=self.non_base_geom_id
+                )
+            success = not self.sim.collided
+
+            geom_cnt_with_feet = []
+            for geom1, geom2 in zip(self.sim.mj_data.contact.geom1, self.sim.mj_data.contact.geom2):
+                if geom1 in self.feet_geom_id:
+                    geom_cnt_with_feet.append(geom2)
+                elif geom2 in self.feet_geom_id:
+                    geom_cnt_with_feet.append(geom1)
+            # Check all feet are in contact with the same geom
+            if (len(geom_cnt_with_feet) < len(self.feet_geom_id) or
+                len(np.unique(geom_cnt_with_feet)) > 1):
+                success = False
+                
+            # data = {
+            #     "cnt_sequence" : cnt_sequence,
+            #     "patch_center" : patch_center,
+            #     "patch_rot" : patch_rot,
+            #     "patch_size" : patch_size,
+            # }
+            # np.savez(str(hash(simulation_path)) + ".npz", data)
+            return success
+        
+        except Exception as e:
+            # print(e)
+            return 0
 
     def evaluate(self, simulation_path : list) -> float:
 
-        q_sol, v_sol, dt_sol = self.run_solver(simulation_path)
+        q_sol, v_sol, dt_sol = self.run_traj_opt(simulation_path)
+        # If diverged
         if len(q_sol) == 0:
             return 0
         
@@ -259,31 +304,50 @@ class MCTSPhaseLocomotionTask(MCTSBase):
         reward = 1.
 
         # Reward on the residuals
-        log10_prod_res = np.log10(np.prod(self.solver.solver.get_stats("residuals")))
+        log10_prod_res = np.log10(np.prod(self.mpc_solver.solver.solver.get_stats("residuals")))
         W_RES_POS = 1/3
         W_RES_NEG = 1/6
-        reward *= self.sigmoid(-(
-            log10_prod_res * W_RES_POS * max(log10_prod_res, 0) +
-            log10_prod_res * W_RES_NEG * min(log10_prod_res, 0)
+        reward *= sigmoid(-(
+            W_RES_POS * max(log10_prod_res, 0) +
+            W_RES_NEG * min(log10_prod_res, 0)
             ))
         
         # Reward on the number of collisions
         v = np.zeros_like(v_sol[0])
-        q_mj_traj = np.stack([self.solver.dyn.convert_to_mujoco(q, v)[0] for q in q_sol])
+        q_mj_traj = np.stack([self.mpc_solver.solver.dyn.convert_to_mujoco(q, v)[0] for q in q_sol])
         all_collisions = self.count_kin_collision(
                                          q_mj_traj,
-                                         self.allowed_collision,
+                                         self.non_robot_geom_id,
                                          )
         n_robot_collision = sum([all_collisions[k] for k in ["robot"] + self.mj_feet_frames])
         avg_robot_collision = n_robot_collision / len(q_sol)
         W_COLLISION = 0.2
         reward *= np.exp(-W_COLLISION * avg_robot_collision)
         
-        if reward > self.max_reward:
-            print(simulation_path, reward, avg_robot_collision, log10_prod_res)
-            time_traj = np.concatenate(([0.], np.cumsum(dt_sol)))
-            self.sim.visualize_trajectory(q_mj_traj, time_traj, record_video=False)
-            self.max_reward = reward
-            self.max_reward_it = self.it
+        # If promising solution, run close loop
+        if log10_prod_res < 0. and avg_robot_collision < 0.2:
+            # Run with different number of nodes per phase
+            success = False
+            # Repeat first one makes the MPC better
+            simulation_path_close_loop = [simulation_path[0]] + simulation_path
+            for nodes_per_phase in [6, 7, 8, 9, 10]:
+                success = self.run_mpc(simulation_path_close_loop, nodes_per_phase)
+                if success:
+                    # Record video
+                    print("SUCCESS")
+                    success = self.run_mpc(simulation_path_close_loop, nodes_per_phase, record_video=True)
+                    break
+            if success:
+                reward = 1.
+            else:
+                MULT_FAILURE = 0.5
+                reward *= MULT_FAILURE
+            
+        # if reward > self.max_reward:
+        #     print(simulation_path, reward, avg_robot_collision, log10_prod_res)
+        #     time_traj = np.concatenate(([0.], np.cumsum(dt_sol)))
+        #     self.sim.visualize_trajectory(q_mj_traj, time_traj, record_video=False)
+        #     self.max_reward = reward
+        #     self.max_reward_it = self.it
         
         return reward
