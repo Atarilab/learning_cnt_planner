@@ -2,12 +2,36 @@ import numpy as np
 from typing import List
 from mj_pin.simulator import Simulator
 from scene.primitives import Box, Surface
-from scene.utils import vis_surfaces_normal
+from scene.utils import vis_surfaces_normal, save_to_yaml, load_from_yaml, scene_file_exists
 
-def setup_scene(sim : Simulator, height : float, edge : float, vis_normal : bool = False) -> List[Surface]:
+SCENE_NAME = "climb_box"
 
+def setup_scene(
+    sim : Simulator,
+    height : float = 0.1,
+    edge : float = 0.4,
+    offset : float = 0.38,
+    save_dir : str = "",
+    vis_normal : bool = False) -> List[Surface]:
+
+    if save_dir:
+        if not scene_file_exists(save_dir):
+            save_to_yaml(
+                save_dir,
+                data={
+                    "name" : SCENE_NAME,
+                    "height" : height,
+                    "edge" : edge,
+                    "offset" : offset
+                }
+            )
+        else:
+            data = load_from_yaml(save_dir)
+            height = data["height"]
+            edge = data["edge"]
+            offset = data["offset"]
+    
     ################## Box
-    offset = 0.35
 
     pos =   [offset + edge/2., 0., height/2.]
     size =  [edge/2., edge/1.5, height/2.]

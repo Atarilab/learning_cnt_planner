@@ -2,13 +2,34 @@ import numpy as np
 from typing import List
 from mj_pin.simulator import Simulator
 from scene.primitives import Box, Surface
-from scene.utils import vis_surfaces_normal
+from scene.utils import vis_surfaces_normal, scene_file_exists, save_to_yaml, load_from_yaml
+
+SCENE_NAME = "cross_gap"
 
 def setup_scene(sim : Simulator,
-                gap_length : float,
-                wall_angle : float,
+                gap_length : float = 0.3,
+                wall_angle : float = 0.6,
                 height : float = 0.,
+                save_dir : str = "",
                 vis_normal : bool = False) -> List[Surface]:
+
+    if save_dir:
+        if not scene_file_exists(save_dir):
+            save_to_yaml(
+                save_dir,
+                data={
+                    "name" : SCENE_NAME,
+                    "gap_length" : float(gap_length),
+                    "height" : float(height),
+                    "wall_angle" : float(wall_angle),
+                }
+            )
+        else:
+            data = load_from_yaml(save_dir)
+            gap_length = data["gap_length"]
+            height = data["height"]
+            wall_angle = data["wall_angle"]
+    
 
     ################## Start Box
     # Parameters
