@@ -2,15 +2,17 @@ import numpy as np
 import mujoco
 from collections import defaultdict
 from typing import List, Tuple
+import os
+import time
+from functools import wraps
 
 from mpc_controller.mpc_acyclic import AcyclicMPC
 from mpc_controller.utils.solver import QuadrupedAcadosSolver
 from mj_pin.simulator import Simulator
 from search.utils.mcts import MCTSBase
+from search.utils.save import save_phase_sequence_to_yaml
 from search.graph_phase_patch import GraphPhasePatchWithPos
 from scene.primitives import Surface
-import time
-from functools import wraps
 
 def timeit(func):
     @wraps(func)
@@ -37,12 +39,14 @@ class MCTSPhaseLocomotionTask(MCTSBase):
                  goal_surf_id : List[int],
                  min_mpc_log10_prod_res : float = 0.,
                  min_mpc_avg_collision : float = 0.5,
+                 save_dir : str = "",
                  ):
         self.sim = sim
         self.q0_mj, self.v0_mj = self.sim.get_initial_state()
         self.q0, self.v0 = mpc_solver.solver.dyn.convert_from_mujoco(self.q0_mj, self.v0_mj)
         self.mpc_solver = mpc_solver
         self.mpc_close_loop = mpc_close_loop
+        self.save_dir = save_dir
                 
         # Init graph
         self.surfaces = surfaces
@@ -243,7 +247,8 @@ class MCTSPhaseLocomotionTask(MCTSBase):
     def run_mpc(self,
                 simulation_path : list,
                 node_per_phase : int,
-                record_video : bool = False
+                record_video : bool = False,
+                use_viewer : bool = False,
                 ) -> bool:
         self.mpc_close_loop.reset(reset_solver=True)
         
@@ -265,7 +270,7 @@ class MCTSPhaseLocomotionTask(MCTSBase):
             # Succes if base doesn't collide
             self.sim.run(
                 sim_time=duration + 1.5,
-                use_viewer=False,
+                use_viewer=use_viewer,
                 controller=self.mpc_close_loop,
                 record_video=record_video,
                 allowed_collision=self.non_base_geom_id
@@ -282,14 +287,9 @@ class MCTSPhaseLocomotionTask(MCTSBase):
             if (len(geom_cnt_with_feet) < len(self.feet_geom_id) or
                 len(np.unique(geom_cnt_with_feet)) > 1):
                 success = False
-                
-            # data = {
-            #     "cnt_sequence" : cnt_sequence,
-            #     "patch_center" : patch_center,
-            #     "patch_rot" : patch_rot,
-            #     "patch_size" : patch_size,
-            # }
-            # np.savez(str(hash(simulation_path)) + ".npz", data)
+            if self.sim.sim_step * self.sim.sim_dt < self.sim.sim_time:
+                success = False
+            
             return success
         
         except Exception as e:
@@ -338,12 +338,17 @@ class MCTSPhaseLocomotionTask(MCTSBase):
                 if success:
                     # Record video
                     print("SUCCESS")
+                    # Save results if run_dir specified
+                    if self.save_dir:
+                        run_dir = os.path.join(self.save_dir, f"iteration_{self.it}")
+                        self.sim.vs.video_dir = os.path.join(run_dir, "close_loop_mpc.mp4")
+                        save_phase_sequence_to_yaml(run_dir, nodes_per_phase)
                     success = self.run_mpc(simulation_path_close_loop, nodes_per_phase, record_video=True)
                     break
             if success:
                 reward = 1.
             else:
-                MULT_FAILURE = 0.5
+                MULT_FAILURE = 0.
                 reward *= MULT_FAILURE
             
         # if reward > self.max_reward:
