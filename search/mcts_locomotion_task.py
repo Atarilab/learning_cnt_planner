@@ -93,7 +93,7 @@ class MCTSPhaseLocomotionTask(MCTSBase):
         super().__init__(graph, C)
 
     def heuristic_bias(self, node):
-        return self.distance_to_goal(node)
+        return (self.distance_to_goal(node) + self.eeff_in_cnt(node)) / 2.
     
     def count_kin_collision(self,
                             q_mj_traj,
@@ -118,6 +118,10 @@ class MCTSPhaseLocomotionTask(MCTSBase):
                     collision_count[name2] += 1
                 
         return collision_count
+    
+    def eeff_in_cnt(self, node):
+        avg_cnt = sum(node[1]) / len(node[1])
+        return avg_cnt
     
     def distance_to_goal(self, node):
         _, cnt, patch = node
@@ -342,7 +346,7 @@ class MCTSPhaseLocomotionTask(MCTSBase):
                     if self.save_dir:
                         run_dir = os.path.join(self.save_dir, f"iteration_{self.it}")
                         self.sim.vs.video_dir = os.path.join(run_dir, "close_loop_mpc.mp4")
-                        save_phase_sequence_to_yaml(run_dir, nodes_per_phase)
+                        save_phase_sequence_to_yaml(run_dir, simulation_path_close_loop, nodes_per_phase)
                     success = self.run_mpc(simulation_path_close_loop, nodes_per_phase, record_video=True)
                     break
             if success:

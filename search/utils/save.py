@@ -20,7 +20,7 @@ def save_phase_sequence_to_yaml(dir_path : str, phase_sequence : list, nodes_per
         yaml.safe_dump(data, file, default_flow_style=False)
     print("Sequence saved to ", file_path)
         
-def load_phase_sequence_from_yaml(dir_path : str) -> list:
+def load_phase_sequence_from_yaml(dir_path : str) -> tuple[list, int]:
     # Save phase sequence to a YAML file
     if not os.path.isdir(dir_path):
         raise ValueError(f"{dir_path} should be a directory.")
