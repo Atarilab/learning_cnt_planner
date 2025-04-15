@@ -90,6 +90,7 @@ class MCTSPhaseLocomotionTask(MCTSBase):
         self.min_mpc_log10_prod_res = min_mpc_log10_prod_res
         self.min_mpc_avg_collision = min_mpc_avg_collision
         self.alpha_exploration = alpha_exploration
+        self.goal_geom_id = self.get_goal_geom_id()
         
         # Init MCTS
         super().__init__(graph, C)
@@ -176,6 +177,13 @@ class MCTSPhaseLocomotionTask(MCTSBase):
                 i_patch += c
         patches = list(patches_dict.values())
         return seq, patches
+    
+    def get_goal_geom_id(self) -> int:
+        for geom_id in range(self.sim.mj_model.ngeom):
+            name = mujoco.mj_id2name(self.sim.mj_model, mujoco.mjtObj.mjOBJ_GEOM, geom_id)
+            if name is not None and "goal" in name:
+                return geom_id
+        raise ValueError("Geometry named 'goal' not found.")
 
     def get_contact_patch(
         self,
@@ -288,13 +296,14 @@ class MCTSPhaseLocomotionTask(MCTSBase):
                     geom_cnt_with_feet.append(geom2)
                 elif geom2 in self.feet_geom_id:
                     geom_cnt_with_feet.append(geom1)
-            # Check all feet are in contact with the same geom
-            if (len(geom_cnt_with_feet) < len(self.feet_geom_id) or
-                len(np.unique(geom_cnt_with_feet)) > 1):
+            # Check all feet are in contact with the same geometry     
+            if len(np.unique(geom_cnt_with_feet)) != 1:
                 success = False
-            if self.sim.sim_step * self.sim.sim_dt < self.sim.sim_time:
-                success = False
-            
+            else:
+                # Should be goal geometry
+                if geom_cnt_with_feet[0] != self.goal_geom_id:
+                    success = False
+                    
             return success
         
         except Exception as e:
@@ -334,9 +343,9 @@ class MCTSPhaseLocomotionTask(MCTSBase):
         W_COLLISION = 0.2
         reward *= np.exp(-W_COLLISION * avg_robot_collision)
         
-        if avg_robot_collision == 0:
+        if avg_robot_collision == 0 and log10_prod_res < 0:
             run_dir = os.path.join(self.save_dir, f"collision_free_iteration_{self.it}")
-            save_phase_sequence_to_yaml(run_dir, simulation_path_close_loop, self.node_per_phase)
+            save_phase_sequence_to_yaml(run_dir, simulation_path, self.node_per_phase)
             
         # If promising solution, run close loop
         if log10_prod_res < self.min_mpc_log10_prod_res and avg_robot_collision < self.min_mpc_avg_collision:

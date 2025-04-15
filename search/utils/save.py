@@ -18,7 +18,7 @@ def save_phase_sequence_to_yaml(dir_path : str, phase_sequence : list, nodes_per
     }
     with open(file_path, "w") as file:
         yaml.safe_dump(data, file, default_flow_style=False)
-    print("Sequence saved to ", file_path)
+    # print("Sequence saved to ", file_path)
         
 def load_phase_sequence_from_yaml(dir_path : str) -> tuple[list, int]:
     # Save phase sequence to a YAML file
