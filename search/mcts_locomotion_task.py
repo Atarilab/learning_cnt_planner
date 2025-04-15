@@ -253,7 +253,7 @@ class MCTSPhaseLocomotionTask(MCTSBase):
                 simulation_path : list,
                 node_per_phase : int,
                 record_video : bool = False,
-                use_viewer : bool = True,
+                use_viewer : bool = False,
                 ) -> bool:
         self.mpc_close_loop.reset(reset_solver=True)
         
@@ -351,7 +351,7 @@ class MCTSPhaseLocomotionTask(MCTSBase):
                     print("SUCCESS")
                     # Save results if run_dir specified
                     if self.save_dir:
-                        run_dir = os.path.join(self.save_dir, f"iteration_{self.it}")
+                        run_dir = os.path.join(self.save_dir, f"close_loop_iteration_{self.it}")
                         self.sim.vs.video_dir = os.path.join(run_dir, "close_loop_mpc.mp4")
                         save_phase_sequence_to_yaml(run_dir, simulation_path_close_loop, nodes_per_phase)
                     success = self.run_mpc(simulation_path_close_loop, nodes_per_phase, record_video=True)
