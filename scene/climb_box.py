@@ -48,6 +48,6 @@ def setup_scene(
         vis_surfaces_normal(sim, all_surfaces)
 
     ################## Simulator
-    sim.edit.add_box(pos, size, euler, allow_collision=False)
+    sim.edit.add_box(pos, size, euler)
 
     return surfaces
