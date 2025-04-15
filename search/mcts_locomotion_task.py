@@ -14,6 +14,9 @@ from search.utils.save import save_phase_sequence_to_yaml
 from search.graph_phase_patch import GraphPhasePatchWithPos
 from scene.primitives import Surface
 
+COLLISION_FREE_NAME = "collision_free"
+CLOSE_LOOP_NAME = "close_loop"
+
 def timeit(func):
     @wraps(func)
     def timed(*args, **kwargs):
@@ -344,7 +347,7 @@ class MCTSPhaseLocomotionTask(MCTSBase):
         reward *= np.exp(-W_COLLISION * avg_robot_collision)
         
         if avg_robot_collision == 0 and log10_prod_res < 0:
-            run_dir = os.path.join(self.save_dir, f"collision_free_iteration_{self.it}")
+            run_dir = os.path.join(self.save_dir, f"{COLLISION_FREE_NAME}_iteration_{self.it}")
             save_phase_sequence_to_yaml(run_dir, simulation_path, self.node_per_phase)
             
         # If promising solution, run close loop
@@ -360,8 +363,8 @@ class MCTSPhaseLocomotionTask(MCTSBase):
                     print("SUCCESS")
                     # Save results if run_dir specified
                     if self.save_dir:
-                        run_dir = os.path.join(self.save_dir, f"close_loop_iteration_{self.it}")
-                        self.sim.vs.video_dir = os.path.join(run_dir, "close_loop_mpc.mp4")
+                        run_dir = os.path.join(self.save_dir, f"{CLOSE_LOOP_NAME}_iteration_{self.it}")
+                        self.sim.vs.video_dir = os.path.join(run_dir, f"{CLOSE_LOOP_NAME}_mpc.mp4")
                         save_phase_sequence_to_yaml(run_dir, simulation_path_close_loop, nodes_per_phase)
                     success = self.run_mpc(simulation_path_close_loop, nodes_per_phase, record_video=True)
                     break

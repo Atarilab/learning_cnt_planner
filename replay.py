@@ -1,7 +1,8 @@
 import argparse
 import os
 import sys
-from search.mcts_locomotion_task import MCTSPhaseLocomotionTask
+import numpy as np
+from search.mcts_locomotion_task import MCTSPhaseLocomotionTask, COLLISION_FREE_NAME, CLOSE_LOOP_NAME
 from search.utils.save import load_phase_sequence_from_yaml
 
 def import_from_run_dir(run_dir, module_name):
@@ -33,15 +34,24 @@ def main():
     parser = argparse.ArgumentParser(description="Process a directory path.")
     parser.add_argument('run_dir', type=str, help='Path to the search directory')
     parser.add_argument('it', type=int, help='Solution iteration number to replay')
+    parser.add_argument('--traj_opt', action="store_true", help='Run trajectory optimization')
     args = parser.parse_args()
 
     run_dir = args.run_dir
     it = args.it
-    solution_dir = os.path.join(run_dir, f"iteration_{it}")
     
-    if os.path.isdir(run_dir) and os.path.isdir(solution_dir):
+    if os.path.isdir(run_dir):
         print(f"Searching in directory: {run_dir}")
-        print(f"Solution dir for iteration {it} found.")    
+        
+        if args.traj_opt:
+            trajopt_file_name = f"{COLLISION_FREE_NAME}_iteration_{it}"
+            solution_dir = os.path.join(run_dir, trajopt_file_name)
+        else:
+            trajopt_file_name = f"{CLOSE_LOOP_NAME}_iteration_{it}"
+            solution_dir = os.path.join(run_dir, trajopt_file_name)
+            
+        if os.path.isdir(solution_dir):
+            print(f"Solution dir for iteration {it} found.")    
 
         try:
             file_name = next(f for f in os.listdir(run_dir) if f.endswith('.py'))
@@ -53,14 +63,24 @@ def main():
                 sim=sim,
                 mpc_solver=mpc_solver,
                 mpc_close_loop=mpc_close_loop,
+                min_in_cnt=0,
                 n_phases=1,
                 surfaces=surfaces,
                 goal_surf_id=[],
             )
             node_sequence, nodes_per_phase = load_phase_sequence_from_yaml(solution_dir)
-            success = mcts.run_mpc(node_sequence, nodes_per_phase, record_video=False, use_viewer=True)          
-            print(sim.mj_data.qpos[2])
-            print("Success", success)
+            if args.traj_opt:
+                print("Running trajectory optimization")
+                mcts.node_per_phase = nodes_per_phase
+                q_sol, v_sol, dt_sol = mcts.run_traj_opt(node_sequence)
+                q_mj_traj = np.stack([mcts.mpc_solver.solver.dyn.convert_to_mujoco(q, v)[0] for q, v in zip(q_sol, v_sol)])
+                time_traj = np.concatenate(([0.], np.cumsum(dt_sol)))
+                mcts.sim.visualize_trajectory(q_mj_traj, time_traj, record_video=False)
+
+            else:
+                print("Running MPC")
+                success = mcts.run_mpc(node_sequence, nodes_per_phase, record_video=False, use_viewer=True)          
+                print("Success", success)
             
         except StopIteration:
             print("Error: No Python file found in the directory.")
