@@ -25,6 +25,7 @@ def setup_scene(sim : Simulator,
                 }
             )
         else:
+            sim.edit.reset()
             data = load_from_yaml(save_dir)
             gap_length = data["gap_length"]
             height = data["height"]
@@ -74,6 +75,6 @@ def setup_scene(sim : Simulator,
     sim.edit.add_box(pos_start, size_start, euler_start)
     sim.edit.add_box(wall_1_pos, wall_size, wall_euler)
     sim.edit.add_box(wall_2_pos, wall_size, [-angle for angle in wall_euler])
-    sim.edit.add_box(pos_end, size_end, euler_end)
+    sim.edit.add_box(pos_end, size_end, euler_end, name="goal")
 
     return surfaces

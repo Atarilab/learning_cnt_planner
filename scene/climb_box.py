@@ -26,6 +26,7 @@ def setup_scene(
                 }
             )
         else:
+            sim.edit.reset()
             data = load_from_yaml(save_dir)
             height = data["height"]
             edge = data["edge"]
@@ -48,6 +49,6 @@ def setup_scene(
         vis_surfaces_normal(sim, all_surfaces)
 
     ################## Simulator
-    sim.edit.add_box(pos, size, euler)
+    sim.edit.add_box(pos, size, euler, name="goal")
 
     return surfaces
