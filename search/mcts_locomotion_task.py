@@ -36,6 +36,7 @@ class MCTSPhaseLocomotionTask(MCTSBase):
                  mpc_close_loop : AcyclicMPC,
                  n_phases : int,
                  surfaces : List[Surface],
+                 min_in_cnt : int,
                  goal_surf_id : List[int],
                  min_mpc_log10_prod_res : float = 0.,
                  min_mpc_avg_collision : float = 0.5,
@@ -62,6 +63,7 @@ class MCTSPhaseLocomotionTask(MCTSBase):
             self.n_cnt,
             goal_surf_id,
             self.patch_pos,
+            min_in_cnt,
         )
 
         # For heuristics
@@ -93,7 +95,7 @@ class MCTSPhaseLocomotionTask(MCTSBase):
         super().__init__(graph, C)
 
     def heuristic_bias(self, node):
-        return (self.distance_to_goal(node) + self.eeff_in_cnt(node)) / 2.
+        return self.distance_to_goal(node)
     
     def count_kin_collision(self,
                             q_mj_traj,
@@ -128,9 +130,8 @@ class MCTSPhaseLocomotionTask(MCTSBase):
         n_in_cnt = sum(cnt)
         
         if n_in_cnt == 0:
-            patch_pos = self.mean_pos_patches.reshape(-1, 3)
-            goal_pos = self.goal_pos
-
+            return 0.
+        
         else:
             patch_pos = np.take_along_axis(self.patch_pos, np.array(patch).reshape(-1, 1), axis=0).reshape(-1, 3)
             goal_pos = self.goal_pos[np.array(cnt) == 1].reshape(-1, 3)
@@ -252,7 +253,7 @@ class MCTSPhaseLocomotionTask(MCTSBase):
                 simulation_path : list,
                 node_per_phase : int,
                 record_video : bool = False,
-                use_viewer : bool = False,
+                use_viewer : bool = True,
                 ) -> bool:
         self.mpc_close_loop.reset(reset_solver=True)
         
@@ -301,6 +302,8 @@ class MCTSPhaseLocomotionTask(MCTSBase):
             return 0
 
     def evaluate(self, simulation_path : list) -> float:
+        if simulation_path[-1][-1] != self.graph.goal_node[-1]:
+            return 0.
 
         q_sol, v_sol, dt_sol = self.run_traj_opt(simulation_path)
         # If diverged
@@ -331,6 +334,10 @@ class MCTSPhaseLocomotionTask(MCTSBase):
         W_COLLISION = 0.2
         reward *= np.exp(-W_COLLISION * avg_robot_collision)
         
+        if avg_robot_collision == 0:
+            run_dir = os.path.join(self.save_dir, f"collision_free_iteration_{self.it}")
+            save_phase_sequence_to_yaml(run_dir, simulation_path_close_loop, self.node_per_phase)
+            
         # If promising solution, run close loop
         if log10_prod_res < self.min_mpc_log10_prod_res and avg_robot_collision < self.min_mpc_avg_collision:
             # Run with different number of nodes per phase
@@ -355,11 +362,4 @@ class MCTSPhaseLocomotionTask(MCTSBase):
                 MULT_FAILURE = 0.
                 reward *= MULT_FAILURE
             
-        # if reward > self.max_reward:
-        #     print(simulation_path, reward, avg_robot_collision, log10_prod_res)
-        #     time_traj = np.concatenate(([0.], np.cumsum(dt_sol)))
-        #     self.sim.visualize_trajectory(q_mj_traj, time_traj, record_video=False)
-        #     self.max_reward = reward
-        #     self.max_reward_it = self.it
-        
         return reward

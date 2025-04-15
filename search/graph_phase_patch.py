@@ -13,12 +13,14 @@ class GraphPhasePatchBase(Graph):
                  n_nodes : int,
                  node_per_phase : int,
                  n_cnt : int,
-                 patches : List[int]):
+                 patches : List[int],
+                 min_in_cnt : int = 0):
         super().__init__()
         self.n = n_nodes
         self.n_per_phase = node_per_phase
         self.n_cnt = n_cnt
         self.patches = patches
+        self.min_in_cnt = min_in_cnt
         self.n_phases = math.ceil(self.n / self.n_per_phase) - 1
         
         # All the possible contact combinations
@@ -37,6 +39,7 @@ class GraphPhasePatchBase(Graph):
             for seq in self.cnt_neighbors
             # Get all patches for the given number of contacts
             for patch in self.patch_neighbors[sum(seq)]
+            if sum(seq) >= self.min_in_cnt
         ]
     
     @staticmethod
@@ -114,10 +117,17 @@ class GraphPhasePatch(GraphPhasePatchBase):
 
         
 class GraphPhasePatchWithPos(GraphPhasePatchBase):
-    def __init__(self, n_nodes, node_per_phase, n_cnt, goal_patches, center_patches):
+    def __init__(self,
+                 n_nodes,
+                 node_per_phase,
+                 n_cnt,
+                 goal_patches,
+                 center_patches,
+                 min_in_cnt : int = 0,
+                 ):
         self.pos = np.array(center_patches)
         patches = list(range(len(center_patches)))
-        super().__init__(n_nodes, node_per_phase, n_cnt, patches)
+        super().__init__(n_nodes, node_per_phase, n_cnt, patches, min_in_cnt)
         self.goal_node = (self.n_phases, (1,) * self.n_cnt, goal_patches)
         
     def is_crossing_legs(self, cnt_b, cnt_a, patch_b, patch_a) -> bool:
