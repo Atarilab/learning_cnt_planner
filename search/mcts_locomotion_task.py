@@ -7,12 +7,12 @@ import time
 from functools import wraps
 
 from mpc_controller.mpc_acyclic import AcyclicMPC
-from mpc_controller.utils.solver import QuadrupedAcadosSolver
 from mj_pin.simulator import Simulator
 from search.utils.mcts import MCTSBase
 from search.utils.save import save_phase_sequence_to_yaml
 from search.graph_phase_patch import GraphPhasePatchWithPos
 from scene.primitives import Surface
+from search.save_data import DataSaver
 
 COLLISION_FREE_NAME = "collision_free"
 CLOSE_LOOP_NAME = "close_loop"
@@ -94,6 +94,9 @@ class MCTSPhaseLocomotionTask(MCTSBase):
         self.min_mpc_avg_collision = min_mpc_avg_collision
         self.alpha_exploration = alpha_exploration
         self.goal_geom_id = self.get_goal_geom_id()
+        
+        # Save data
+        self.save_data = DataSaver(self.save_dir)
         
         # Init MCTS
         super().__init__(graph, C)
@@ -346,7 +349,17 @@ class MCTSPhaseLocomotionTask(MCTSBase):
         W_COLLISION = 0.2
         reward *= np.exp(-W_COLLISION * avg_robot_collision)
         
-        if avg_robot_collision == 0 and log10_prod_res < 0:
+        # Save log data
+        data = {
+            "sequence":simulation_path,
+            "residuals":[float(r) for r in self.mpc_solver.solver.solver.get_stats("residuals")],
+            "log_prod_res":float(log10_prod_res),
+            "avg_collision":avg_robot_collision,
+            "reward":float(reward),
+        }
+        self.save_data.append(**data)
+        
+        if avg_robot_collision == 0:
             run_dir = os.path.join(self.save_dir, f"{COLLISION_FREE_NAME}_iteration_{self.it}")
             save_phase_sequence_to_yaml(run_dir, simulation_path, self.node_per_phase)
             
