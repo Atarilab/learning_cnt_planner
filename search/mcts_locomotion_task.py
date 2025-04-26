@@ -380,17 +380,18 @@ class MCTSPhaseLocomotionTask(MCTSBase):
                 reward *= MULT_FAILURE
                 
         # Save log data
-        data = {
-            "sequence":simulation_path,
-            "residuals":[float(r) for r in self.mpc_solver.solver.solver.get_stats("residuals")],
-            "log_prod_res":float(log10_prod_res),
-            "avg_collision":avg_robot_collision,
-            "reward":float(reward),
-            "iteration": self.it,
-            "run_close_loop" : int(run_mpc),
-            "success_close_loop" : int(success),
-            "search_time": time.time() - self.start_time,
-        }
+        if self.save_dir:
+            data = {
+                "sequence":simulation_path,
+                "residuals":[float(r) for r in self.mpc_solver.solver.solver.get_stats("residuals")],
+                "log_prod_res":float(log10_prod_res),
+                "avg_collision":avg_robot_collision,
+                "reward":float(reward),
+                "iteration": self.it,
+                "run_close_loop" : int(run_mpc),
+                "success_close_loop" : int(success),
+                "search_time": time.time() - self.start_time,
+            }
         self.save_data.append(**data)
             
         return reward
