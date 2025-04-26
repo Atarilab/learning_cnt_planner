@@ -159,13 +159,24 @@ class GraphPhasePatchWithPos(GraphPhasePatchBase):
                     return True
 
         return False
+    
+    def enough_contact_with_goal(self, n_phase_remaining : int, cnt, patch) -> bool:
+        if self.min_in_cnt == 0:
+            return True
+        
+        cnt_with_goal = sum(1 for patch_id in patch if patch_id in self.goal_node[2])
+        sw = self.n_cnt - sum(cnt)
+        if self.n_cnt - (cnt_with_goal + sw) > (n_phase_remaining - 1) * (self.n_cnt - self.min_in_cnt):
+            return False
+        
+        return True
 
     def get_neighbors(self, node):
         if node:
             i_phase, cnt, patch = node
-            
+            n_phase_remaining = self.n_phases - 1 - i_phase
             # Before the last phase, allow only valid transitions from the last node that could lead to goal
-            if i_phase == self.n_phases - 2:
+            if n_phase_remaining == 1:
                 return [
                     (i_phase+1, *phase)
                     for phase in self.all_possible_phases
@@ -181,15 +192,18 @@ class GraphPhasePatchWithPos(GraphPhasePatchBase):
                         ) and
                         not self.is_crossing_legs(
                             phase[0], self.goal_node[1], phase[1], self.goal_node[2]
+                        ) and
+                        self.enough_contact_with_goal(
+                        n_phase_remaining, phase[0], phase[1]
                         )
                     )
-                ]            
+                ]
             # Last phase has to be goal
-            elif i_phase == self.n_phases - 1:
+            elif n_phase_remaining == 0:
                 return [self.goal_node]
             
             # End of the plan reached
-            elif i_phase >= self.n_phases:
+            elif n_phase_remaining < 0:
                 return []
 
             # if phase with at least one contact
@@ -202,6 +216,8 @@ class GraphPhasePatchWithPos(GraphPhasePatchBase):
                         cnt, phase[0], patch, phase[1]
                     ) and not self.is_crossing_legs(
                         cnt, phase[0], patch, phase[1]
+                    ) and self.enough_contact_with_goal(
+                        n_phase_remaining, phase[0], phase[1]
                     )
                 ]
             else:

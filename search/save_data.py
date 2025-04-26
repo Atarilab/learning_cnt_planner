@@ -9,8 +9,9 @@ class DataSaver:
         self.save_dir = save_dir
         self.datafile_name = os.path.join(self.save_dir, FILE_NAME)
         # Create empty file
-        with open(self.datafile_name, 'w') as file:
-            yaml.dump({}, file)
+        if not os.path.exists(self.datafile_name):
+            with open(self.datafile_name, 'w') as file:
+                yaml.dump({}, file)
             
     def append(self, **kwargs):
         

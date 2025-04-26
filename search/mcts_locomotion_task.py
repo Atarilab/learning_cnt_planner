@@ -97,6 +97,7 @@ class MCTSPhaseLocomotionTask(MCTSBase):
         
         # Save data
         self.save_data = DataSaver(self.save_dir)
+        self.start_time = time.time()
         
         # Init MCTS
         super().__init__(graph, C)
@@ -318,7 +319,7 @@ class MCTSPhaseLocomotionTask(MCTSBase):
 
     def evaluate(self, simulation_path : list) -> float:
         if simulation_path[-1][-1] != self.graph.goal_node[-1]:
-            return 0.
+            return None
 
         q_sol, v_sol, dt_sol = self.run_traj_opt(simulation_path)
         # If diverged
@@ -349,24 +350,15 @@ class MCTSPhaseLocomotionTask(MCTSBase):
         W_COLLISION = 0.2
         reward *= np.exp(-W_COLLISION * avg_robot_collision)
         
-        # Save log data
-        data = {
-            "sequence":simulation_path,
-            "residuals":[float(r) for r in self.mpc_solver.solver.solver.get_stats("residuals")],
-            "log_prod_res":float(log10_prod_res),
-            "avg_collision":avg_robot_collision,
-            "reward":float(reward),
-        }
-        self.save_data.append(**data)
-        
         if avg_robot_collision == 0:
             run_dir = os.path.join(self.save_dir, f"{COLLISION_FREE_NAME}_iteration_{self.it}")
             save_phase_sequence_to_yaml(run_dir, simulation_path, self.node_per_phase)
             
+        success = False
+        run_mpc = log10_prod_res < self.min_mpc_log10_prod_res and avg_robot_collision < self.min_mpc_avg_collision
         # If promising solution, run close loop
-        if log10_prod_res < self.min_mpc_log10_prod_res and avg_robot_collision < self.min_mpc_avg_collision:
+        if run_mpc:
             # Run with different number of nodes per phase
-            success = False
             # Repeat first one makes the MPC better
             simulation_path_close_loop = [simulation_path[0]] + simulation_path
             for nodes_per_phase in [6, 7, 8, 9, 10]:
@@ -386,5 +378,19 @@ class MCTSPhaseLocomotionTask(MCTSBase):
             else:
                 MULT_FAILURE = 0.
                 reward *= MULT_FAILURE
+                
+        # Save log data
+        data = {
+            "sequence":simulation_path,
+            "residuals":[float(r) for r in self.mpc_solver.solver.solver.get_stats("residuals")],
+            "log_prod_res":float(log10_prod_res),
+            "avg_collision":avg_robot_collision,
+            "reward":float(reward),
+            "iteration": self.it,
+            "run_close_loop" : int(run_mpc),
+            "success_close_loop" : int(success),
+            "search_time": time.time() - self.start_time,
+        }
+        self.save_data.append(**data)
             
         return reward

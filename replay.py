@@ -32,26 +32,15 @@ def import_from_run_dir(run_dir, module_name):
         
 def main():
     parser = argparse.ArgumentParser(description="Process a directory path.")
-    parser.add_argument('run_dir', type=str, help='Path to the search directory')
-    parser.add_argument('it', type=int, help='Solution iteration number to replay')
+    parser.add_argument('solution_dir', type=str, help='Path to the search directory')
     parser.add_argument('--traj_opt', action="store_true", help='Run trajectory optimization')
     args = parser.parse_args()
 
-    run_dir = args.run_dir
-    it = args.it
-    
-    if os.path.isdir(run_dir):
-        print(f"Searching in directory: {run_dir}")
-        
-        if args.traj_opt:
-            trajopt_file_name = f"{COLLISION_FREE_NAME}_iteration_{it}"
-            solution_dir = os.path.join(run_dir, trajopt_file_name)
-        else:
-            trajopt_file_name = f"{CLOSE_LOOP_NAME}_iteration_{it}"
-            solution_dir = os.path.join(run_dir, trajopt_file_name)
-            
-        if os.path.isdir(solution_dir):
-            print(f"Solution dir for iteration {it} found.")    
+    solution_dir = args.solution_dir
+    run_dir = os.path.split(solution_dir)[0]
+    print(run_dir)
+    if os.path.isdir(run_dir) and os.path.isdir(solution_dir):
+        print(f"Searching in directory: {solution_dir}")
 
         try:
             file_name = next(f for f in os.listdir(run_dir) if f.endswith('.py'))

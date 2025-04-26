@@ -18,7 +18,7 @@ N_OPT_NODES = 50
 DURATION = 2.5
 MAX_IT = 100
 
-HEIGHT = 0.2
+HEIGHT = 0.3
 EDGE = 0.4
 
 robot_description = get_robot_description(ROBOT_NAME)
@@ -33,7 +33,7 @@ surfaces = setup_scene(sim, height=HEIGHT, edge=EDGE, vis_normal=False)
 ##################  Solver
 # Opt
 DT = 0.035
-NODES = 35
+NODES = 50
 config_opt = MPCOptConfig(
     time_horizon=NODES * DT,
     n_nodes=NODES,
@@ -56,7 +56,7 @@ def __init_np(l : List, scale : float=1.):
     return np.array(l) * scale
 
 W = [
-        0e0, 0e0, 0e0,      # Base position weights
+        0e0, 0e0, 0e1,      # Base position weights
         1e1, 4e1, 4e1,      # Base orientation (ypr) weights
         1e0, 1e0, 5e0,      # Base linear velocity weights
         5e0, 3e1, 3e1,      # Base angular velocity weights
@@ -71,9 +71,9 @@ config_cost = MPCCostConfig(
     W_joint=__init_np(HSE_SCALE + [0.02] * len(HSE_SCALE), 5.),
     W_e_joint=__init_np(HSE_SCALE + [0.01] * len(HSE_SCALE), 0.1),
     W_acc=__init_np(HSE_SCALE, 5.e-4),
-    W_swing=__init_np([2e4] * n_feet),
-    W_eeff_ori=__init_np([10.] * n_feet),
-    W_cnt_f_reg = __init_np([[0.01, 0.01, 0.05]] * n_feet),
+    W_swing=__init_np([5e4] * n_feet),
+    W_eeff_ori=__init_np([200.] * n_feet),
+    W_cnt_f_reg = __init_np([[0.03, 0.03, 0.05]] * n_feet),
     W_foot_pos_constr_stab = __init_np([1e1] * n_feet),
     W_foot_displacement = __init_np([0.]),
     cnt_radius = 0.015, # m
@@ -134,19 +134,21 @@ if __name__ == "__main__":
         C=C,
         alpha_exploration=ALPHA,
         sim=sim,
-        solver=mpc.solver,
+        mpc_close_loop=mpc.solver,
+        mpc_solver=mpc,
+        min_in_cnt=0,
         n_phases=N_PHASES,
         surfaces=surfaces,
         goal_surf_id=GOAL
         )
     print("Node per phase", mcts.node_per_phase)
-    mcts.node_per_phase = 6
+    mcts.node_per_phase = 7
     duration = len(phase_sequence) * mcts.node_per_phase * (config_opt.time_horizon / config_opt.n_nodes)
 
     # Low horizon MPC
     start_phase = 0 if phase_sequence[0] else 1
     
-    cnt_sequence, patches = mcts.get_sequence_patches_from_path(phase_sequence[start_phase:])
+    cnt_sequence, patches = mcts.get_sequence_patches_from_path(phase_sequence[start_phase:], mcts.node_per_phase)
     # cnt_sequence = cnt_sequence[:, :mcts.opt_nodes]
     patch_center, patch_rot, patch_size = mcts.get_contact_patch(cnt_sequence, patches, mcts.surfaces)
     mpc.set_cnt_plan(

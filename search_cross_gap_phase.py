@@ -1,13 +1,16 @@
 import numpy as np
 from typing import Any, List
+import os
+import time
 
 from mj_pin.utils import get_robot_description
 from mj_pin.simulator import Simulator
 from mpc_controller.config.config_abstract import MPCOptConfig, MPCCostConfig, GaitConfig, HPIPM_MODE
 from mpc_controller.mpc_acyclic import AcyclicMPC
 from search.mcts_locomotion_task import MCTSPhaseLocomotionTask
-from scene.cross_gap import setup_scene
+from scene.cross_gap import setup_scene, SCENE_NAME
 
+BASE_SAVE_DIR = "data"
 # SIM
 ROBOT_NAME = "go2"
 SIM_DT = 1e-3
@@ -15,7 +18,7 @@ SIM_DT = 1e-3
 DT = 0.035
 N_NODES_MPC = 35
 # TRAJ OPT
-RECOMPILE = False
+RECOMPILE = True
 N_NODES_SOLVER = 40
 DURATION = N_NODES_SOLVER * DT * 1.5 # Traj opt with a coarser discretization
 MAX_IT = 50
@@ -29,13 +32,19 @@ mj_feet_frames = ["FL", "FR", "RL", "RR"]
 pin_feet_frames = [f + "_foot" for f in mj_feet_frames]
 n_feet = len(mj_feet_frames)
 sim = Simulator(robot_description.xml_scene_path)
+save_dir = os.path.join(BASE_SAVE_DIR, f"{SCENE_NAME}_{time.strftime("%Y-%m-%d_%H-%M-%S", time.localtime())}")
+
+# Ensure the save directory exists
+os.makedirs(save_dir, exist_ok=True)
+# Copy the current script to the save directory
+current_script_path = os.path.abspath(__file__)
+destination_path = os.path.join(save_dir, os.path.basename(current_script_path))
+with open(current_script_path, 'r') as src, open(destination_path, 'w') as dst:
+    dst.write(src.read())
 
 ################# Setup scene task
 h_offset = 0.1
-surfaces = setup_scene(sim, gap_length=GAP_LENGTH, wall_angle=WALL_ANGLE, height=h_offset/2)
-q0 = robot_description.q0
-q0[2] += h_offset
-sim.set_initial_state(q0)
+surfaces = setup_scene(sim, gap_length=GAP_LENGTH, wall_angle=WALL_ANGLE, height=h_offset/2, save_dir="",)
 
 ##################  Solver
 # Opt
@@ -146,13 +155,26 @@ mpc_close_loop.config_opt.recompile = False
 if __name__ == "__main__":
     
     ITERATIONS = 5000
-    C = 5.
-    ALPHA = 0.65
+    C = 1.
+    ALPHA = 0.25
     N_PHASES = 8
     GOAL = (1, 1, 1, 1)
     START_NODE = (0, (1, 1, 1, 1), (0, 0, 0, 0))
     MIN_RES = 0.
     MIN_AVG_COLLISION = 0.2
+    
+    h_offset = 0.1
+    surfaces = setup_scene(sim, gap_length=GAP_LENGTH, wall_angle=WALL_ANGLE, height=h_offset/2, save_dir=save_dir,)
+    q0 = robot_description.q0
+    q0[2] += h_offset
+    sim.set_initial_state(q0)
+
+    os.makedirs(save_dir, exist_ok=True)
+    # Copy the current script to the save directory
+    current_script_path = os.path.abspath(__file__)
+    destination_path = os.path.join(save_dir, os.path.basename(current_script_path))
+    with open(current_script_path, 'r') as src, open(destination_path, 'w') as dst:
+        dst.write(src.read())
     
     # MCTS search 
     mcts = MCTSPhaseLocomotionTask(
@@ -166,6 +188,7 @@ if __name__ == "__main__":
         goal_surf_id=GOAL,
         min_mpc_log10_prod_res=MIN_RES,
         min_mpc_avg_collision=MIN_AVG_COLLISION,
+        save_dir=save_dir
         )
     
     mcts.run(START_NODE, ITERATIONS)

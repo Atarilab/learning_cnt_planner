@@ -1,13 +1,16 @@
 import numpy as np
 from typing import Any, List
+import time
+import os
 
 from mj_pin.utils import get_robot_description
 from mj_pin.simulator import Simulator
 from mpc_controller.config.config_abstract import MPCOptConfig, MPCCostConfig, GaitConfig, HPIPM_MODE
 from mpc_controller.mpc_acyclic import AcyclicMPC
 from search.mcts_locomotion_task import MCTSPhaseLocomotionTask
-from scene.climb_box import setup_scene
+from scene.climb_box import setup_scene, SCENE_NAME
 
+BASE_SAVE_DIR = "data"
 # SIM
 ROBOT_NAME = "go2"
 SIM_DT = 1e-3
@@ -17,12 +20,13 @@ N_NODES_MPC = 35
 # TRAJ OPT
 RECOMPILE = False
 N_NODES_SOLVER = 50
-DURATION = N_NODES_SOLVER * DT * 2. # Traj opt with a coarser discretization
-MAX_IT = 50
+DURATION = N_NODES_SOLVER * DT * 1.5 # Traj opt with a coarser discretization
+MAX_IT = 75
 MAX_QP = 7
 # SCENE PARAM
-HEIGHT = 0.2
+HEIGHT = 0.25
 EDGE = 0.4
+OFFSET = 0.45
 
 robot_description = get_robot_description(ROBOT_NAME)
 mj_feet_frames = ["FL", "FR", "RL", "RR"]
@@ -31,7 +35,7 @@ n_feet = len(mj_feet_frames)
 sim = Simulator(robot_description.xml_scene_path)
 
 ################# Setup scene task
-surfaces = setup_scene(sim, height=HEIGHT, edge=EDGE, vis_normal=False)
+surfaces = setup_scene(sim, height=HEIGHT, edge=EDGE, offset=OFFSET, save_dir="", vis_normal=False)
 surfaces = surfaces[:2]
 
 ##################  Solver
@@ -54,7 +58,7 @@ config_solver = MPCOptConfig(
 config_close_loop = MPCOptConfig(
     time_horizon=N_NODES_MPC * DT,
     n_nodes=N_NODES_MPC,
-    replanning_freq=25,
+    replanning_freq=20,
     Kp=30,
     Kd=7.,
     recompile=RECOMPILE,
@@ -75,25 +79,25 @@ def __init_np(l : List, scale : float=1.):
     return np.array(l) * scale
 
 W = [
-        1e0, 1e0, 1e0,      # Base position weights
-        1e0, 1e0, 1e0,      # Base orientation (ypr) weights
-        1e1, 1e1, 1e2,      # Base linear velocity weights
-        2e1, 4e1, 4e1,      # Base angular velocity weights
+        0e0, 0e0, 1e0,      # Base position weights
+        1e1, 4e1, 4e1,      # Base orientation (ypr) weights
+        1e0, 1e0, 5e0,      # Base linear velocity weights
+        5e0, 3e1, 3e1,      # Base angular velocity weights
     ]
 
-HSE_SCALE = [15., 5., 1.] *  n_feet
+HSE_SCALE = [15., 10., 1.] *  n_feet
 config_cost = MPCCostConfig(
     robot_name=ROBOT_NAME,
     gait_name="",
-    W_e_base=__init_np(W, 1.),
-    W_base=__init_np(W, 2.),
-    W_joint=__init_np(HSE_SCALE + [1.] * len(HSE_SCALE), 3.),
-    W_e_joint=__init_np(HSE_SCALE + [.01] * len(HSE_SCALE), 5.),
+    W_e_base=__init_np(W, 10.),
+    W_base=__init_np(W, 5.),
+    W_joint=__init_np(HSE_SCALE + [0.01] * len(HSE_SCALE), 30.),
+    W_e_joint=__init_np(HSE_SCALE + [0.01] * len(HSE_SCALE), 10.),
     W_acc=__init_np(HSE_SCALE, 1.e-3),
-    W_swing=__init_np([5e3] * n_feet),
-    W_eeff_ori=__init_np([1e-1] * n_feet),
-    W_cnt_f_reg = __init_np([[0.03, 0.03, 0.05]] * n_feet),
-    W_foot_pos_constr_stab = __init_np([1e1] * n_feet),
+    W_swing=__init_np([5e4] * n_feet),
+    W_eeff_ori=__init_np([3e2] * n_feet),
+    W_cnt_f_reg = __init_np([[0.03, 0.03, 0.1]] * n_feet),
+    W_foot_pos_constr_stab = __init_np([1e2] * n_feet),
     W_foot_displacement = __init_np([0.]),
     cnt_radius = 0.015, # m
     time_opt = __init_np([1.0e4]),
@@ -106,8 +110,8 @@ config_gait = GaitConfig(
     1.,
     np.array([0.1, 0.1, 0.1, 0.1]),
     np.array([0.1, 0.1, 0.1, 0.1]),
-    0.35,
-    0.055,
+    0.3 + HEIGHT,
+    0.1,
 )
 
 mpc_solver = AcyclicMPC(
@@ -142,14 +146,26 @@ mpc_close_loop.config_opt.recompile = False
 
 if __name__ == "__main__":
     
-    ITERATIONS = 5000
-    C = 1.
+    ITERATIONS = 1000
+    C = 2.
     ALPHA = 0.75
-    N_PHASES = 10
+    N_PHASES = 11
     GOAL = (1, 1, 1, 1)
     START_NODE = (0, (1, 1, 1, 1), (0, 0, 0, 0))
-    MIN_RES = 0.
-    MIN_AVG_COLLISION = 1.5
+    MIN_IN_CNT = 3
+    MIN_RES = 2.
+    MIN_AVG_COLLISION = 0.25
+    
+    save_dir = os.path.join(BASE_SAVE_DIR, f"{SCENE_NAME}_{time.strftime("%Y-%m-%d_%H-%M-%S", time.localtime())}")
+    surfaces = setup_scene(sim, height=HEIGHT, edge=EDGE, offset=OFFSET, save_dir=save_dir, vis_normal=False)
+    surfaces = surfaces[:2]
+    
+    os.makedirs(save_dir, exist_ok=True)
+    # Copy the current script to the save directory
+    current_script_path = os.path.abspath(__file__)
+    destination_path = os.path.join(save_dir, os.path.basename(current_script_path))
+    with open(current_script_path, 'r') as src, open(destination_path, 'w') as dst:
+        dst.write(src.read())
     
     # MCTS search 
     mcts = MCTSPhaseLocomotionTask(
@@ -160,9 +176,11 @@ if __name__ == "__main__":
         mpc_close_loop=mpc_close_loop,
         n_phases=N_PHASES,
         surfaces=surfaces,
+        min_in_cnt=MIN_IN_CNT,
         goal_surf_id=GOAL,
         min_mpc_log10_prod_res=MIN_RES,
         min_mpc_avg_collision=MIN_AVG_COLLISION,
+        save_dir=save_dir
         )
     
     mcts.run(START_NODE, ITERATIONS)

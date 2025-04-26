@@ -16,8 +16,15 @@ class MCTSBase(ABC):
         self.current_search_path: list[Node] = []
         self.C = C
         self.it = 0
+        
+    def heuristic_bias(self, node: Node) -> float:
+        """
+        Heuristic bias for the node.
+        This can be replaced with a more complex heuristic if needed.
+        """
+        return 0.0
 
-    def UCB(self, node: Node) -> float:
+    def UCB(self, node: Node, parent_visit : int) -> float:
         """
         Upper Confidence Bound (UCB) formula for MCTS.
         UCB = Q/N + C * sqrt(log(N_parent) / N)
@@ -29,8 +36,7 @@ class MCTSBase(ABC):
         if n == 0:
             return float("inf")
 
-        parent_n = sum(self.value_visit[child][1] for child in self.graph.get_neighbors(node)) + 1
-        return (q / n) + self.C * np.sqrt(np.log(parent_n) / (n + 1e-6))
+        return ((q + self.heuristic_bias(node))/ n) + self.C * np.sqrt(np.log(parent_visit) / (n + 1e-6))
     
     def is_leaf(self, node : Node) -> bool:
         """
@@ -45,10 +51,10 @@ class MCTSBase(ABC):
         """
         if self.is_leaf(node):
             return node
-        
+        n = self.value_visit[node][1]
         children = self.graph.get_neighbors(node)
         np.random.shuffle(children)
-        return max(children, key=lambda child: self.UCB(child))
+        return max(children, key=lambda child: self.UCB(child, n))
 
     def select(self, node: Node) -> Node:
         """
@@ -103,8 +109,11 @@ class MCTSBase(ABC):
         Runs MCTS for a given number of iterations.
         """
         for self.it in tqdm(range(iterations)):
-            selected_node = self.select(root)
-            reward = self.simulate(selected_node)
+            # Infeasible -> reward is None
+            reward = None
+            while reward is None:
+                selected_node = self.select(root)
+                reward = self.simulate(selected_node)
             self.backpropagate(reward)
             
     def best_path(self, root: Node) -> list[Node]:

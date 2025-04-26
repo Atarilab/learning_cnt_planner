@@ -9,6 +9,7 @@ from mpc_controller.utils.solver import QuadrupedAcadosSolver
 from mpc_controller.mpc_acyclic import AcyclicMPC, LocomotionMPC
 from search.mcts_locomotion_task import MCTSPhaseLocomotionTask
 from scene.cross_gap import setup_scene
+import yaml
 
 
 SIM_DT = 1e-3
@@ -140,13 +141,19 @@ if __name__ == "__main__":
         (1, (1, 1, 1, 0), (1, 1, 1)),
         (6, (1, 1, 1, 1), (1, 1, 1, 1))
         ]
-        
+    
+    from search.utils.save import save_phase_sequence_to_yaml, load_phase_sequence_from_yaml
+    dir_path = "./data/cross_gap_mpc"
+    save_phase_sequence_to_yaml(dir_path, phase_sequence)
+    seq, n = load_phase_sequence_from_yaml(dir_path)
+    print(seq == phase_sequence)
     # MCTS search 
     mcts = MCTSPhaseLocomotionTask(
         C=C,
         alpha_exploration=ALPHA,
         sim=sim,
-        solver=mpc.solver,
+        mpc_solver=mpc,
+        mpc_close_loop=mpc,
         n_phases=N_PHASES,
         surfaces=surfaces,
         goal_surf_id=GOAL
@@ -158,7 +165,7 @@ if __name__ == "__main__":
     # Low horizon MPC
     start_phase = 0 if phase_sequence[0] else 1
     
-    cnt_sequence, patches = mcts.get_sequence_patches_from_path(phase_sequence[start_phase:])
+    cnt_sequence, patches = mcts.get_sequence_patches_from_path(phase_sequence[start_phase:], mcts.node_per_phase)
     # cnt_sequence = cnt_sequence[:, :mcts.opt_nodes]
     patch_center, patch_rot, patch_size = mcts.get_contact_patch(cnt_sequence, patches, mcts.surfaces)
     mpc.set_cnt_plan(
