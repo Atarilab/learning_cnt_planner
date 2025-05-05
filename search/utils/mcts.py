@@ -51,12 +51,12 @@ class MCTSBase(ABC):
         return ((w + self.heuristic_bias(parent, child)) / n) + self.C * np.sqrt(np.log(N) / n)
 
     def is_leaf(self, node: Node) -> bool:
-        return len(self.graph.get_neighbors(node)) == 0
+        return len(self.graph.neighbors(node)) == 0
 
     def best_child(self, node: Node) -> Node:
         if self.is_leaf(node):
             return node
-        children = self.graph.get_neighbors(node)
+        children = self.graph.neighbors(node)
         np.random.shuffle(children)
         return max(children, key=lambda child: self.UCB(node, child))
 
@@ -75,7 +75,7 @@ class MCTSBase(ABC):
         pass
 
     def rollout_policy(self, node: Node) -> Node:
-        children = self.graph.get_neighbors(node)
+        children = self.graph.neighbors(node)
         return random.choice(children) if children else node
 
     def simulate(self, node: Node) -> float:
@@ -96,8 +96,7 @@ class MCTSBase(ABC):
             self.increase_visit(self.current_search_path[0])
             
     def run(self, root: Node, iterations: int):
-        expanded_nodes = set()
-        MAX_ATTEMPS = 10
+        MAX_ATTEMPS = 5
         
         pbar = trange(0, iterations, desc="MCTS")
 
@@ -117,19 +116,17 @@ class MCTSBase(ABC):
             self.backpropagate(reward)
 
             # Update statistics
-            expanded_nodes.update(self.current_search_path)
             depth = len(self.current_search_path)
-
             pbar.set_postfix({
                 "depth": depth,
-                "expanded": len(expanded_nodes),
+                "expanded": len(self.visit_count),
             })
 
     def best_path(self, root: Node) -> list[Node]:
         path = [root]
         node = root
         while not self.is_leaf(node):
-            children = self.graph.get_neighbors(node)
+            children = self.graph.neighbors(node)
             if not children:
                 break
             node = max(children, key=lambda child: self.value_visit[(node, child)][0] / (self.value_visit[(node, child)][1] + 1e-6))
