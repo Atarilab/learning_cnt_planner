@@ -4,21 +4,27 @@ import sys
 import numpy as np
 from search.mcts_locomotion_task import MCTSPhaseLocomotionTask, COLLISION_FREE_NAME, CLOSE_LOOP_NAME
 from search.utils.save import load_phase_sequence_from_yaml
+from configs_mpc_solver import FILE_NAME
 
-def import_from_run_dir(run_dir, module_name):
+def import_from_run_dir(run_dir, file_name, config_name):
     import importlib.util
 
     # Add the directory to the system path
     sys.path.insert(0, run_dir)
     try:
         # Load the module dynamically
-        spec = importlib.util.spec_from_file_location(module_name, os.path.join(run_dir, f"{module_name}.py"))
+        spec = importlib.util.spec_from_file_location(config_name, os.path.join(run_dir, f"{config_name}.py"))
         module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(module)
-
+        
         # Extract the required variables
         mpc_solver = getattr(module, 'mpc_solver', None)
         mpc_close_loop = getattr(module, 'mpc_close_loop', None)
+        
+        spec = importlib.util.spec_from_file_location(file_name, os.path.join(run_dir, f"{file_name}.py"))
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+
         sim = getattr(module, 'sim', None)
         surfaces = getattr(module, 'surfaces', None)
 
@@ -34,6 +40,7 @@ def main():
     parser = argparse.ArgumentParser(description="Process a directory path.")
     parser.add_argument('solution_dir', type=str, help='Path to the search directory')
     parser.add_argument('--traj_opt', action="store_true", help='Run trajectory optimization')
+    parser.add_argument('--vis', action="store_true", help='Visualize the trajectory.')
     args = parser.parse_args()
 
     solution_dir = args.solution_dir
@@ -44,8 +51,8 @@ def main():
 
         try:
             file_name = next(f for f in os.listdir(run_dir) if f.endswith('.py'))
-            module_name = file_name[:-3]  # Remove the .py extension
-            mpc_solver, mpc_close_loop, sim, surfaces = import_from_run_dir(run_dir, module_name)
+            config_file_name = FILE_NAME[:-3]  # Remove the .py extension
+            mpc_solver, mpc_close_loop, sim, surfaces = import_from_run_dir(run_dir, file_name[:-3], config_file_name)
             mcts = MCTSPhaseLocomotionTask(
                 C=1,
                 alpha_exploration=1,
@@ -58,6 +65,7 @@ def main():
                 goal_surf_id=[],
             )
             node_sequence, nodes_per_phase = load_phase_sequence_from_yaml(solution_dir)
+
             if args.traj_opt:
                 print("Running trajectory optimization")
                 mcts.node_per_phase = nodes_per_phase
@@ -65,7 +73,16 @@ def main():
                 q_mj_traj = np.stack([mcts.mpc_solver.solver.dyn.convert_to_mujoco(q, v)[0] for q, v in zip(q_sol, v_sol)])
                 time_traj = np.concatenate(([0.], np.cumsum(dt_sol)))
                 mcts.sim.visualize_trajectory(q_mj_traj, time_traj, record_video=False)
-
+                
+            elif args.vis:
+                traj_path = os.path.join(solution_dir, "traj.npz")
+                if os.path.exists(traj_path):
+                    print("Trajectory found in run dir")
+                    data = np.load(traj_path)
+                    mcts.sim.visualize_trajectory(data["q_mj_traj"], data["time_traj"], record_video=False)
+                else:
+                    print("Trajectory not found in ", solution_dir)
+                    
             else:
                 print("Running MPC")
                 success = mcts.run_mpc(node_sequence, nodes_per_phase, record_video=False, use_viewer=True)          
