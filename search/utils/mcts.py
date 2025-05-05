@@ -119,7 +119,8 @@ class MCTSBase(ABC):
             depth = len(self.current_search_path)
             pbar.set_postfix({
                 "depth": depth,
-                "expanded": len(self.visit_count),
+                "n_expanded": len(self.visit_count),
+                "n_actions": len(self.value_visit)
             })
 
     def best_path(self, root: Node) -> list[Node]:
