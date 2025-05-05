@@ -46,6 +46,7 @@ class MCTSPhaseLocomotionTask(MCTSBase):
                  min_mpc_avg_collision : float = 0.5,
                  save_dir : str = "",
                  keep_seq_id : bool = False,
+                 binary_reward : bool = False,
                  ):
         self.sim = sim
         self.q0_mj, self.v0_mj = self.sim.get_initial_state()
@@ -54,6 +55,7 @@ class MCTSPhaseLocomotionTask(MCTSBase):
         self.mpc_close_loop = mpc_close_loop
         self.save_dir = save_dir
         self.keep_seq_id = keep_seq_id
+        self.binary_reward = binary_reward
         
         # Init graph
         self.surfaces = surfaces
@@ -335,7 +337,7 @@ class MCTSPhaseLocomotionTask(MCTSBase):
         
         # Compute reward
         reward = 1.
-
+        
         # Reward on the residuals
         log10_prod_res = np.log10(np.prod(self.mpc_solver.solver.solver.get_stats("residuals")))
         W_RES_POS = 1/4
@@ -356,6 +358,9 @@ class MCTSPhaseLocomotionTask(MCTSBase):
         avg_robot_collision = n_robot_collision / len(q_sol)
         W_COLLISION = 0.1
         reward *= np.exp(-W_COLLISION * avg_robot_collision)
+        
+        if self.binary_reward:
+            reward = 1 if avg_robot_collision == 0 else 0.
         
         if avg_robot_collision == 0:
             run_dir = os.path.join(self.save_dir, f"{COLLISION_FREE_NAME}_iteration_{self.it}")
