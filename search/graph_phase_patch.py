@@ -174,9 +174,21 @@ class GraphPhasePatchWithPos(GraphPhasePatchBase):
     def get_neighbors(self, node):
         if node:
             i_phase, cnt, patch = node
+                        
             n_phase_remaining = self.n_phases - 1 - i_phase
+            # End of the plan reached
+            if n_phase_remaining < 0:
+                return []
+            
+            # Last phase has to be goal
+            elif n_phase_remaining == 0:
+                return [self.goal_node]
+            
+            elif patch == self.goal_node[-1]:
+                return [(i_phase + 1, (1,) * self.n_cnt, patch)]
+            
             # Before the last phase, allow only valid transitions from the last node that could lead to goal
-            if n_phase_remaining == 1:
+            elif n_phase_remaining == 1:
                 return [
                     (i_phase+1, *phase)
                     for phase in self.all_possible_phases
@@ -198,13 +210,7 @@ class GraphPhasePatchWithPos(GraphPhasePatchBase):
                         )
                     )
                 ]
-            # Last phase has to be goal
-            elif n_phase_remaining == 0:
-                return [self.goal_node]
-            
-            # End of the plan reached
-            elif n_phase_remaining < 0:
-                return []
+
 
             # if phase with at least one contact
             if sum(cnt) > 0:

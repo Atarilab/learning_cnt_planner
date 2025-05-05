@@ -5,6 +5,7 @@ from typing import List, Tuple
 import os
 import time
 from functools import wraps
+import random
 
 from mpc_controller.mpc_acyclic import AcyclicMPC
 from mj_pin.simulator import Simulator
@@ -44,6 +45,7 @@ class MCTSPhaseLocomotionTask(MCTSBase):
                  min_mpc_log10_prod_res : float = 0.,
                  min_mpc_avg_collision : float = 0.5,
                  save_dir : str = "",
+                 keep_seq_id : bool = False,
                  ):
         self.sim = sim
         self.q0_mj, self.v0_mj = self.sim.get_initial_state()
@@ -51,7 +53,8 @@ class MCTSPhaseLocomotionTask(MCTSBase):
         self.mpc_solver = mpc_solver
         self.mpc_close_loop = mpc_close_loop
         self.save_dir = save_dir
-                
+        self.keep_seq_id = keep_seq_id
+        
         # Init graph
         self.surfaces = surfaces
         self.solver_nodes = mpc_solver.solver.config_opt.n_nodes
@@ -73,6 +76,7 @@ class MCTSPhaseLocomotionTask(MCTSBase):
         dist_all_patches = np.linalg.norm(self.patch_pos[None, :, :] - self.patch_pos[:, None, :], axis=-1)
         self.max_dist_patches = np.max(dist_all_patches)
         self.mean_pos_patches = np.mean(self.patch_pos.reshape(-1, 3), axis=0, keepdims=True)
+        self.mean_pos_patches_repeat = np.tile(self.mean_pos_patches, (self.n_cnt, 1))
         
         # To compute reward
         self.max_reward = 0.
@@ -102,8 +106,14 @@ class MCTSPhaseLocomotionTask(MCTSBase):
         # Init MCTS
         super().__init__(graph, C)
 
-    def heuristic_bias(self, node):
-        return self.distance_to_goal(node)
+    # def heuristic_bias(self, node):
+    #     return self.distance_to_goal(node)
+    
+    def to_mcts_node(self, node):
+        if self.keep_seq_id:
+            return node
+        else:
+            return (node[1], node[2])
     
     def count_kin_collision(self,
                             q_mj_traj,
@@ -135,37 +145,28 @@ class MCTSPhaseLocomotionTask(MCTSBase):
     
     def distance_to_goal(self, node):
         _, cnt, patch = node
-        n_in_cnt = sum(cnt)
         
-        if n_in_cnt == 0:
-            return 0.
-        
+        if sum(cnt) == 0:
+            return 1.
         else:
+            # patch_pos = self.mean_pos_patches_repeat.copy()
             patch_pos = np.take_along_axis(self.patch_pos, np.array(patch).reshape(-1, 1), axis=0).reshape(-1, 3)
-            goal_pos = self.goal_pos[np.array(cnt) == 1].reshape(-1, 3)
-        
-        avg_dist_to_goal = np.linalg.norm(np.mean(patch_pos - goal_pos, axis=0))
+            avg_dist_to_goal = np.linalg.norm(np.mean(patch_pos - self.goal_pos[np.array(cnt) == 1], axis=0))
+            
         return 1 - avg_dist_to_goal / self.max_dist_patches
     
     def rollout_policy(self, node):
         """
         Selects a random child node during rollout.
         """
-        children = self.graph.get_neighbors(node)
+        d_to_goal = self.distance_to_goal(node)
+        children = list(filter(lambda n : self.distance_to_goal(n) >= d_to_goal, self.graph.get_neighbors(node)))
         
-        if np.random.rand() < self.alpha_exploration:
-            child_id = np.random.choice(len(children))
-        else:
-            biases = np.array([self.distance_to_goal(child) for child in children]) + 1e-6
-            s = biases.sum()
-            n = len(biases)
-            # Add mean to increase lower probabilities
-            biases += s / n
-            probabilities = biases / (2 * s)
-            child_id = np.random.choice(len(children), p=probabilities)
-            
-        return children[child_id]
-    
+        if not children:
+            return random.choice(self.graph.get_neighbors(node))
+        
+        return random.choice(children)
+        
     def get_sequence_patches_from_path(self, path, node_per_phase : int):
         seq = np.array([list(phase[1]) for phase in path]).T.repeat(node_per_phase, axis=-1)
         seq = np.concatenate([seq, seq[:, None, -1]], axis=-1)
@@ -219,6 +220,7 @@ class MCTSPhaseLocomotionTask(MCTSBase):
         
         for i_foot in range(n_feet):
             cnt_phase = 0
+            next_contact = 0
             last_in_cnt = False
             for i_node in range(n_nodes):
                 if contact_seq[i_foot, i_node] == 1:  # Foot is in contact
@@ -227,10 +229,15 @@ class MCTSPhaseLocomotionTask(MCTSBase):
                     # If break cnt, go to next phase
                     if last_in_cnt:
                         cnt_phase += 1
+                        next_contact = np.argmax(contact_seq[i_foot, i_node:]) // 2 + i_node
                     last_in_cnt = False
                     
                 # Select a surface from the valid patches
-                i = min(cnt_phase, len(contact_patches[i_foot])-1)
+                if i_node > 0 and i_node < next_contact:
+                    i = min(cnt_phase, len(contact_patches[i_foot])-1) - 1
+                else:
+                    i = min(cnt_phase, len(contact_patches[i_foot])-1)
+
                 id_surf = contact_patches[i_foot][i]
                 surface = surfaces[id_surf]
 
@@ -331,8 +338,8 @@ class MCTSPhaseLocomotionTask(MCTSBase):
 
         # Reward on the residuals
         log10_prod_res = np.log10(np.prod(self.mpc_solver.solver.solver.get_stats("residuals")))
-        W_RES_POS = 1/3
-        W_RES_NEG = 1/6
+        W_RES_POS = 1/4
+        W_RES_NEG = 1/3
         reward *= sigmoid(-(
             W_RES_POS * max(log10_prod_res, 0) +
             W_RES_NEG * min(log10_prod_res, 0)
@@ -347,13 +354,16 @@ class MCTSPhaseLocomotionTask(MCTSBase):
                                          )
         n_robot_collision = sum([all_collisions[k] for k in ["robot"] + self.mj_feet_frames])
         avg_robot_collision = n_robot_collision / len(q_sol)
-        W_COLLISION = 0.2
+        W_COLLISION = 0.1
         reward *= np.exp(-W_COLLISION * avg_robot_collision)
         
         if avg_robot_collision == 0:
             run_dir = os.path.join(self.save_dir, f"{COLLISION_FREE_NAME}_iteration_{self.it}")
             save_phase_sequence_to_yaml(run_dir, simulation_path, self.node_per_phase)
-            
+            # time_traj = np.concatenate(([0.], np.cumsum(dt_sol)))
+            # self.sim.visualize_trajectory(q_mj_traj, time_traj, record_video=False)
+            np.savez(os.path.join(run_dir, "traj.npz"), q_mj_traj=q_mj_traj, time_traj=np.concatenate(([0.], np.cumsum(dt_sol))))
+
         success = False
         run_mpc = log10_prod_res < self.min_mpc_log10_prod_res and avg_robot_collision < self.min_mpc_avg_collision
         # If promising solution, run close loop
@@ -376,7 +386,7 @@ class MCTSPhaseLocomotionTask(MCTSBase):
             if success:
                 reward = 1.
             else:
-                MULT_FAILURE = 0.
+                MULT_FAILURE = 1.
                 reward *= MULT_FAILURE
                 
         # Save log data
