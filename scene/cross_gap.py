@@ -72,9 +72,9 @@ def setup_scene(sim : Simulator,
         vis_surfaces_normal(sim, surfaces)
 
     ################## Simulator
-    sim.edit.add_box(pos_start, size_start, euler_start)
-    sim.edit.add_box(wall_1_pos, wall_size, wall_euler)
-    sim.edit.add_box(wall_2_pos, wall_size, [-angle for angle in wall_euler])
-    sim.edit.add_box(pos_end, size_end, euler_end, name="goal")
+    sim.edit.add_box(pos_start, size_start, euler_start, rgba=[0.8, 0.8, 0.8, 1.0])
+    sim.edit.add_box(wall_1_pos, wall_size, wall_euler, rgba=[0.8, 0.8, 0.8, 1.0])
+    sim.edit.add_box(wall_2_pos, wall_size, [-angle for angle in wall_euler], rgba=[0.8, 0.8, 0.8, 1.0])
+    sim.edit.add_box(pos_end, size_end, euler_end, name="goal", rgba=[0.8, 0.8, 0.8, 1.0])
 
     return surfaces

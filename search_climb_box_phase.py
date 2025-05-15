@@ -9,18 +9,18 @@ from search.mcts_locomotion_task import MCTSPhaseLocomotionTask
 from scene.climb_box import setup_scene, SCENE_NAME
 from configs_mpc_solver import *
 
-HEIGHT = 0.3
+HEIGHT = 0.5
 EDGE = 0.4
 OFFSET = 0.5
 
 sim = Simulator(robot_description.xml_scene_path, sim_dt=SIM_DT)
 surfaces = setup_scene(sim, height=HEIGHT, edge=EDGE, offset=OFFSET, save_dir="", vis_normal=False)
-if HEIGHT <= 0.3:
+if HEIGHT <= 0.2:
     surfaces = surfaces[:2]
 
 if __name__ == "__main__":
     
-    ITERATIONS = 2000
+    ITERATIONS = 1000
     C = 1.
     ALPHA = 0.5
     N_PHASES = 12
@@ -30,8 +30,9 @@ if __name__ == "__main__":
     MIN_RES = 0.
     MIN_AVG_COLLISION = 0.
     KEEP_SEQ_ID = True
+    BINARY_REWARD = True
     
-    save_dir = os.path.join(BASE_SAVE_DIR, f"{SCENE_NAME}_{time.strftime("%Y-%m-%d_%H-%M-%S", time.localtime())}")
+    save_dir = os.path.join(BASE_SAVE_DIR, f"{SCENE_NAME}_{time.strftime("%Y-%m-%d_%H-%M-%S", time.localtime())}")        
     setup_scene(sim, height=HEIGHT, edge=EDGE, offset=OFFSET, save_dir=save_dir, vis_normal=False)
     
     os.makedirs(save_dir, exist_ok=True)
@@ -60,7 +61,8 @@ if __name__ == "__main__":
         min_mpc_log10_prod_res=MIN_RES,
         min_mpc_avg_collision=MIN_AVG_COLLISION,
         save_dir=save_dir,
-        keep_seq_id=KEEP_SEQ_ID
+        keep_seq_id=KEEP_SEQ_ID,
+        binary_reward=BINARY_REWARD,
         )
     
     mcts.run(START_NODE, ITERATIONS)

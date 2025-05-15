@@ -340,7 +340,7 @@ class MCTSPhaseLocomotionTask(MCTSBase):
         
         # Reward on the residuals
         log10_prod_res = np.log10(np.prod(self.mpc_solver.solver.solver.get_stats("residuals")))
-        W_RES_POS = 1/4
+        W_RES_POS = 1/3
         W_RES_NEG = 1/3
         reward *= sigmoid(-(
             W_RES_POS * max(log10_prod_res, 0) +
@@ -356,7 +356,7 @@ class MCTSPhaseLocomotionTask(MCTSBase):
                                          )
         n_robot_collision = sum([all_collisions[k] for k in ["robot"] + self.mj_feet_frames])
         avg_robot_collision = n_robot_collision / len(q_sol)
-        W_COLLISION = 0.1
+        W_COLLISION = 0.1   
         reward *= np.exp(-W_COLLISION * avg_robot_collision)
         
         if self.binary_reward:

@@ -41,6 +41,7 @@ def main():
     parser.add_argument('solution_dir', type=str, help='Path to the search directory')
     parser.add_argument('--traj_opt', action="store_true", help='Run trajectory optimization')
     parser.add_argument('--vis', action="store_true", help='Visualize the trajectory.')
+    parser.add_argument('--video', action="store_true", help='Record vieod of trajectory.')
     args = parser.parse_args()
 
     solution_dir = args.solution_dir
@@ -79,10 +80,33 @@ def main():
                 if os.path.exists(traj_path):
                     print("Trajectory found in run dir")
                     data = np.load(traj_path)
-                    mcts.sim.visualize_trajectory(data["q_mj_traj"], data["time_traj"], record_video=False)
+                
+                    if args.video:
+                        
+                        mcts.sim.vs.set_high_quality()
+                        if "climb_box" in run_dir:
+                            mcts.sim.vs.track_obj = "base"
+                            mcts.sim.vs.distance /= 1.4
+                            mcts.sim.vs.set_side_view()
+                            mcts.sim.vs.elevation -= 15
+                        elif "cross_gap" in run_dir:
+                            mcts.sim.vs.track_obj = "base"
+                            mcts.sim.vs.distance *= 1.1
+                            mcts.sim.vs.set_front_view()
+                            mcts.sim.vs.elevation -= 10
+                            
+                        run_dir = solution_dir.split("/")[-2]
+                        traj_dir = solution_dir.split("/")[-1]
+                        video_dir = os.path.join("./video", run_dir)
+                        if not os.path.exists(video_dir):
+                            os.makedirs(video_dir)
+                        video_path = os.path.join("./video", run_dir, f"{traj_dir}.mp4")
+                        mcts.sim.vs.video_dir = video_path
+                        
+                    mcts.sim.visualize_trajectory(data["q_mj_traj"], data["time_traj"], record_video=args.video, use_viewer_cam=False)
+
                 else:
                     print("Trajectory not found in ", solution_dir)
-                    
             else:
                 print("Running MPC")
                 success = mcts.run_mpc(node_sequence, nodes_per_phase, record_video=False, use_viewer=True)          

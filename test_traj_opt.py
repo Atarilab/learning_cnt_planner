@@ -9,7 +9,7 @@ from search.mcts_locomotion_task import MCTSPhaseLocomotionTask
 from configs_mpc_solver import *
 
 # from scene.climb_box import setup_scene, SCENE_NAME
-# HEIGHT = 0.2
+# HEIGHT = 0.4
 # EDGE = 0.4
 # OFFSET = 0.5
 
@@ -35,7 +35,7 @@ from configs_mpc_solver import *
 
     
 from scene.cross_gap import setup_scene, SCENE_NAME
-GAP_LENGTH = 0.4  # Adjustable gap between start and goal
+GAP_LENGTH = 0.9  # Adjustable gap between start and goal
 WALL_ANGLE = np.radians(65)  # Adjustable wall angle
 h_offset = 0.1
 

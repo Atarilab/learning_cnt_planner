@@ -9,7 +9,7 @@ from scene.cross_gap import setup_scene, SCENE_NAME
 from configs_mpc_solver import *
 
 # SCENE PARAM
-GAP_LENGTH = 0.8  # Adjustable gap between start and goal
+GAP_LENGTH = 1.5
 WALL_ANGLE = np.radians(65)  # Adjustable wall angle
 h_offset = 0.1
 
@@ -21,7 +21,7 @@ sim.set_initial_state(q0)
 
 if __name__ == "__main__":
     
-    ITERATIONS = 2000
+    ITERATIONS = 1000
     C = 1.
     ALPHA = 0.33
     N_PHASES = 10
@@ -29,7 +29,8 @@ if __name__ == "__main__":
     START_NODE = (0, (1, 1, 1, 1), (0, 0, 0, 0))
     MIN_RES = 0.
     MIN_AVG_COLLISION = 0.
-    KEEP_SEQ_ID = False
+    KEEP_SEQ_ID = True
+    BINARY_REWARD = True
     MIN_IN_CNT = 0
     
     save_dir = os.path.join(BASE_SAVE_DIR, f"{SCENE_NAME}_{time.strftime("%Y-%m-%d_%H-%M-%S", time.localtime())}")
@@ -62,6 +63,7 @@ if __name__ == "__main__":
         min_mpc_avg_collision=MIN_AVG_COLLISION,
         save_dir=save_dir,
         keep_seq_id=KEEP_SEQ_ID,
+        binary_reward=BINARY_REWARD,
         )
     
     mcts.run(START_NODE, ITERATIONS)

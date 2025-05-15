@@ -1,4 +1,6 @@
 data/*
+experiments/*
+figures/*
 *.mp4
 
 # Byte-compiled / optimized / DLL files
